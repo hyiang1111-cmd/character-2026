@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "Character": {
+      "title": "Character",
+      "description": "An archived roleplay character with detailed lore, roleplay directives, Google AI Studio chat link, and public viewer link.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "fullName": { "type": "string", "maxLength": 150 },
+        "age": { "type": "string", "maxLength": 50 },
+        "gender": { "type": "string", "maxLength": 50 },
+        "nationality": { "type": "string", "maxLength": 100 },
+        "occupation": { "type": "string", "maxLength": 100 },
+        "universe": { "type": "string", "maxLength": 150 },
+        "category": { "type": "string", "maxLength": 100 },
+        "portraitUrl": { "type": "string", "maxLength": 500000 },
+        "shortDescription": { "type": "string", "maxLength": 1000 },
+        "appearance": { "type": "string", "maxLength": 5000 },
+        "personality": { "type": "string", "maxLength": 5000 },
+        "background": { "type": "string", "maxLength": 10000 },
+        "relationships": { "type": "string", "maxLength": 5000 },
+        "habitsPreferences": { "type": "string", "maxLength": 5000 },
+        "strengthsWeaknesses": { "type": "string", "maxLength": 5000 },
+        "roleplayScenario": { "type": "string", "maxLength": 10000 },
+        "initialGreeting": { "type": "string", "maxLength": 5000 },
+        "perspective": { "type": "string", "maxLength": 100 },
+        "speakingStyle": { "type": "string", "maxLength": 500 },
+        "behavioralRules": { "type": "string", "maxLength": 5000 },
+        "systemPrompt": { "type": "string", "maxLength": 20000 },
+        "chatUrl": { "type": "string", "maxLength": 1000 },
+        "viewerLink": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["published", "draft"] },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["name", "status"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global website editorial copy, branding names, and categories.",
+      "type": "object",
+      "properties": {
+        "siteName": { "type": "string", "maxLength": 100 },
+        "logoText": { "type": "string", "maxLength": 100 },
+        "homeTitle": { "type": "string", "maxLength": 200 },
+        "homeSubtitle": { "type": "string", "maxLength": 500 },
+        "aboutTitle": { "type": "string", "maxLength": 200 },
+        "aboutTagline": { "type": "string", "maxLength": 300 },
+        "aboutStory": { "type": "string", "maxLength": 5000 },
+        "footerText": { "type": "string", "maxLength": 500 },
+        "footerCopyright": { "type": "string", "maxLength": 200 },
+        "navHome": { "type": "string", "maxLength": 50 },
+        "navLibrary": { "type": "string", "maxLength": 50 },
+        "navAbout": { "type": "string", "maxLength": 50 }
+      }
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorized administrator account metadata.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "maxLength": 50 },
+        "addedAt": { "type": "number" }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/characters/{characterId}": {
+      "schema": "Character",
+      "description": "Collection of archived roleplay characters."
+    },
+    "/settings/{settingId}": {
+      "schema": "SiteSettings",
+      "description": "Global application and editorial settings."
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "Collection of authorized administrator user documents."
+    }
+  }
+}

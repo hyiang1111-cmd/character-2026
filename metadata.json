@@ -1,0 +1,6 @@
+{
+  "name": "Pink Character Archive",
+  "description": "A delicate pastel pink character archive and roleplay prompt studio with direct Google AI Studio links and viewer access.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
