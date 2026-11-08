@@ -19,10 +19,11 @@ import { CharacterList } from './CharacterList';
 import { CharacterForm } from './CharacterForm';
 import { ContentEditor } from './ContentEditor';
 import { MusicManager } from './MusicManager';
+import { CommunityAdmin } from './CommunityAdmin';
 import { FirebaseSetupGuide } from './FirebaseSetupGuide';
 import { useAuth } from '../../context/AuthContext';
 import { saveCharacter, deleteCharacter, duplicateCharacter } from '../../services/storage';
-import { Music } from 'lucide-react';
+import { Music, Crown } from 'lucide-react';
 
 interface AdminDashboardProps {
   characters: Character[];
@@ -42,7 +43,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onShowToast,
 }) => {
   const { logout, currentUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<'characters' | 'content' | 'music' | 'firebase'>('characters');
+  const [activeTab, setActiveTab] = useState<'characters' | 'community' | 'content' | 'music' | 'firebase'>('characters');
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [characterToDelete, setCharacterToDelete] = useState<{ id: string; name: string } | null>(null);
@@ -215,6 +216,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </button>
 
             <button
+              onClick={() => setActiveTab('community')}
+              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                activeTab === 'community'
+                  ? 'border-[#E9A9BB] text-[#51434A]'
+                  : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
+              }`}
+            >
+              <Crown className="w-3.5 h-3.5 text-[#FFD700]" />
+              <span>Cộng đồng & VIP Supporter</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('content')}
               className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'content'
@@ -330,6 +343,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onTogglePublish={handleTogglePublish}
                 onPreview={onPreviewCharacter}
                 categories={siteContent.categories || []}
+                onShowToast={onShowToast}
+              />
+            )}
+
+            {activeTab === 'community' && (
+              <CommunityAdmin
                 onShowToast={onShowToast}
               />
             )}

@@ -1,10 +1,10 @@
 import { Character } from '../types/character';
 import { SiteContent, DEFAULT_SITE_CONTENT } from '../types/site';
 import { MusicTrack, MusicSettings, DEFAULT_MUSIC_SETTINGS } from '../types/music';
+import firebaseConfig from '../../firebase-applet-config.json';
 import {
   db,
   auth,
-  storage,
   handleFirestoreError,
   OperationType,
   checkServerAdminAuthorization
@@ -22,12 +22,6 @@ import {
   orderBy,
   writeBatch
 } from 'firebase/firestore';
-import {
-  ref,
-  uploadBytesResumable,
-  getDownloadURL,
-  deleteObject
-} from 'firebase/storage';
 
 const CHARACTERS_PATH = 'characters';
 const SETTINGS_PATH = 'settings';
@@ -389,17 +383,40 @@ export function subscribeToMusicSettings(callback: (settings: MusicSettings) => 
 }
 
 /**
- * Fetches all uploaded music tracks from Firestore.
+ * Fetches music tracks from Firestore.
+ * - Public visitors receive ONLY public tracks (isPublic == true).
+ * - Administrators receive all tracks (public and hidden).
  */
-export async function getMusicTracks(): Promise<MusicTrack[]> {
+export async function getMusicTracks(forAdmin: boolean = false): Promise<MusicTrack[]> {
   try {
-    const q = query(collection(db, MUSIC_TRACKS_PATH), orderBy('createdAt', 'desc'));
+    let q;
+    if (forAdmin) {
+      q = query(collection(db, MUSIC_TRACKS_PATH), orderBy('createdAt', 'desc'));
+    } else {
+      q = query(
+        collection(db, MUSIC_TRACKS_PATH),
+        where('isPublic', '==', true),
+        orderBy('createdAt', 'desc')
+      );
+    }
     const snap = await getDocs(q);
     const tracks: MusicTrack[] = [];
     snap.forEach((d) => {
+      const data = d.data() as any;
       tracks.push({
         id: d.id,
-        ...(d.data() as Omit<MusicTrack, 'id'>),
+        title: data.title || 'Untitled Track',
+        artist: data.artist || '',
+        coverUrl: data.coverUrl || '',
+        url: data.url || '',
+        format: data.format || 'Audio URL',
+        isPublic: data.isPublic !== false,
+        isActive: Boolean(data.isActive),
+        order: Number(data.order) || 0,
+        createdAt: Number(data.createdAt) || Date.now(),
+        updatedAt: Number(data.updatedAt) || Date.now(),
+        uploadedBy: data.uploadedBy || '',
+        status: data.status || (data.isPublic ? 'published' : 'draft'),
       });
     });
     return tracks;
@@ -410,17 +427,52 @@ export async function getMusicTracks(): Promise<MusicTrack[]> {
 }
 
 /**
- * Saves a music track metadata entry in Firestore.
+ * Saves or updates a music track entry in Firestore.
+ * Requires verified administrator authorization.
  */
-export async function saveMusicTrack(track: MusicTrack): Promise<void> {
+export async function saveMusicTrack(track: MusicTrack): Promise<MusicTrack> {
   const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
   if (!isAuthorized) {
-    throw new Error('Unauthorized: Only verified administrators can manage music tracks.');
+    throw new Error('Unauthorized: Only verified administrators can save music tracks.');
   }
 
   const docPath = `${MUSIC_TRACKS_PATH}/${track.id}`;
+  const now = Date.now();
+  const trackToSave: MusicTrack = {
+    ...track,
+    isPublic: track.isPublic !== false,
+    updatedAt: now,
+  };
+
   try {
-    await setDoc(doc(db, MUSIC_TRACKS_PATH, track.id), track);
+    await setDoc(doc(db, MUSIC_TRACKS_PATH, track.id), trackToSave);
+    return trackToSave;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, docPath);
+    throw error;
+  }
+}
+
+/**
+ * Toggles a track's public visibility status in Firestore.
+ */
+export async function toggleTrackPublicStatus(trackId: string, currentIsPublic: boolean): Promise<void> {
+  const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
+  if (!isAuthorized) {
+    throw new Error('Unauthorized: Only verified administrators can toggle track visibility.');
+  }
+
+  const docPath = `${MUSIC_TRACKS_PATH}/${trackId}`;
+  try {
+    await setDoc(
+      doc(db, MUSIC_TRACKS_PATH, trackId),
+      {
+        isPublic: !currentIsPublic,
+        status: !currentIsPublic ? 'published' : 'draft',
+        updatedAt: Date.now(),
+      },
+      { merge: true }
+    );
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, docPath);
   }
@@ -437,7 +489,7 @@ export async function setActiveMusicTrack(track: MusicTrack): Promise<void> {
 
   try {
     // 1. Fetch all tracks and update their isActive status
-    const allTracks = await getMusicTracks();
+    const allTracks = await getMusicTracks(true);
     const batch = writeBatch(db);
 
     allTracks.forEach((t) => {
@@ -455,6 +507,8 @@ export async function setActiveMusicTrack(track: MusicTrack): Promise<void> {
         activeTrackId: track.id,
         activeTrackUrl: track.url,
         activeTrackTitle: track.title,
+        activeTrackArtist: track.artist || '',
+        activeTrackCoverUrl: track.coverUrl || '',
         updatedAt: Date.now(),
       },
       { merge: true }
@@ -467,25 +521,15 @@ export async function setActiveMusicTrack(track: MusicTrack): Promise<void> {
 }
 
 /**
- * Deletes a music track from Firestore and optionally Firebase Storage.
+ * Deletes a music track entry from Firestore.
  */
-export async function deleteMusicTrack(trackId: string, storagePath?: string): Promise<void> {
+export async function deleteMusicTrack(trackId: string): Promise<void> {
   const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
   if (!isAuthorized) {
     throw new Error('Unauthorized: Only verified administrators can delete music tracks.');
   }
 
   try {
-    // Delete file from Firebase Storage if path provided
-    if (storage && storagePath) {
-      try {
-        const fileRef = ref(storage, storagePath);
-        await deleteObject(fileRef);
-      } catch (storageErr) {
-        console.warn('Could not delete file from Cloud Storage:', storageErr);
-      }
-    }
-
     // Delete Firestore document
     await deleteDoc(doc(db, MUSIC_TRACKS_PATH, trackId));
 
@@ -497,6 +541,7 @@ export async function deleteMusicTrack(trackId: string, storagePath?: string): P
         activeTrackId: null,
         activeTrackUrl: '/audio/background-music.mp3',
         activeTrackTitle: 'Default Archive Melody',
+        activeTrackArtist: 'Pink Character Archive',
       });
     }
   } catch (error) {
@@ -505,18 +550,45 @@ export async function deleteMusicTrack(trackId: string, storagePath?: string): P
 }
 
 /**
- * Subscribes to real-time updates for music tracks.
+ * Subscribes to real-time updates for music tracks via Firestore onSnapshot.
+ * - Public visitors stream ONLY public tracks.
+ * - Verified administrators stream all tracks.
  */
-export function subscribeToMusicTracks(callback: (tracks: MusicTrack[]) => void): () => void {
-  const q = query(collection(db, MUSIC_TRACKS_PATH), orderBy('createdAt', 'desc'));
-  return onSnapshot(
+export function subscribeToMusicTracks(
+  callback: (tracks: MusicTrack[]) => void,
+  forAdmin: boolean = false
+): () => void {
+  let q;
+  if (forAdmin) {
+    q = query(collection(db, MUSIC_TRACKS_PATH), orderBy('createdAt', 'desc'));
+  } else {
+    q = query(
+      collection(db, MUSIC_TRACKS_PATH),
+      where('isPublic', '==', true),
+      orderBy('createdAt', 'desc')
+    );
+  }
+
+  const unsubscribe = onSnapshot(
     q,
-    (snap) => {
+    (snapshot) => {
       const tracks: MusicTrack[] = [];
-      snap.forEach((d) => {
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as any;
         tracks.push({
-          id: d.id,
-          ...(d.data() as Omit<MusicTrack, 'id'>),
+          id: docSnap.id,
+          title: data.title || 'Untitled Track',
+          artist: data.artist || '',
+          coverUrl: data.coverUrl || '',
+          url: data.url || '',
+          format: data.format || 'Audio URL',
+          isPublic: data.isPublic !== false,
+          isActive: Boolean(data.isActive),
+          order: Number(data.order) || 0,
+          createdAt: Number(data.createdAt) || Date.now(),
+          updatedAt: Number(data.updatedAt) || Date.now(),
+          uploadedBy: data.uploadedBy || '',
+          status: data.status || (data.isPublic ? 'published' : 'draft'),
         });
       });
       callback(tracks);
@@ -525,65 +597,7 @@ export function subscribeToMusicTracks(callback: (tracks: MusicTrack[]) => void)
       handleFirestoreError(error, OperationType.LIST, MUSIC_TRACKS_PATH);
     }
   );
-}
 
-/**
- * Uploads an audio file to Firebase Storage.
- * Validates maximum file size (up to 25MB) and audio MIME types.
- */
-export async function uploadMusicFile(
-  file: File,
-  onProgress?: (percent: number) => void
-): Promise<{ url: string; storagePath: string }> {
-  const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
-  if (!isAuthorized) {
-    throw new Error('Unauthorized: Only verified administrators can upload music.');
-  }
-
-  // 25MB limit
-  const MAX_SIZE = 25 * 1024 * 1024;
-  if (file.size > MAX_SIZE) {
-    throw new Error(`Dung lượng file (${(file.size / (1024 * 1024)).toFixed(1)} MB) vượt quá giới hạn tối đa cho phép là 25 MB.`);
-  }
-
-  if (!storage) {
-    throw new Error('Firebase Storage chưa được khởi tạo. Bạn có thể sử dụng link âm thanh trực tiếp.');
-  }
-
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const storagePath = `music/${Date.now()}_${safeName}`;
-  const fileRef = ref(storage, storagePath);
-
-  const uploadTask = uploadBytesResumable(fileRef, file, {
-    contentType: file.type || 'audio/mpeg',
-  });
-
-  return new Promise((resolve, reject) => {
-    uploadTask.on(
-      'state_changed',
-      (snapshot) => {
-        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        if (onProgress) {
-          onProgress(Math.round(progress));
-        }
-      },
-      (error) => {
-        console.error('Firebase Storage upload error:', error);
-        reject(
-          new Error(
-            `Lỗi khi tải file lên máy chủ lưu trữ: ${error.message || 'Vui lòng kiểm tra quyền truy cập Storage'}`
-          )
-        );
-      },
-      async () => {
-        try {
-          const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-          resolve({ url: downloadUrl, storagePath });
-        } catch (err) {
-          reject(err);
-        }
-      }
-    );
-  });
+  return unsubscribe;
 }
 

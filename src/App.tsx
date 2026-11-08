@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { CommunityProvider, useCommunity } from './context/CommunityContext';
+import { MusicProvider } from './context/MusicContext';
 import { Character } from './types/character';
 import { SiteContent, DEFAULT_SITE_CONTENT } from './types/site';
 import {
@@ -17,22 +19,28 @@ import { CharacterModal } from './components/public/CharacterModal';
 import { ScenarioModal } from './components/public/ScenarioModal';
 import { WelcomeScreen } from './components/common/WelcomeScreen';
 import { MusicPlayerWidget } from './components/common/MusicPlayerWidget';
-import { MusicProvider } from './context/MusicContext';
+import { MagicTouch } from './components/common/MagicTouch';
 import { AboutSection } from './components/public/AboutSection';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { AdminSetup } from './components/admin/AdminSetup';
+import { TheLounge } from './components/community/TheLounge';
+import { HallOfFame } from './components/community/HallOfFame';
+import { DonatePage } from './components/community/DonatePage';
+import { AuthModal } from './components/community/AuthModal';
+import { MemberProfileModal } from './components/community/MemberProfileModal';
 import { isValidHttpsUrl } from './services/promptGenerator';
 import { Sparkles, BookOpen, Layers } from 'lucide-react';
 
 function AppContent() {
   const { isAdmin } = useAuth();
+  const { trackCharacterView, recordChatClick, viewMemberProfileId, closeMemberProfileModal } = useCommunity();
 
   // Hash-based routing to keep navigation strictly within the current origin
   const getInitialView = (): AppView => {
     if (typeof window !== 'undefined' && window.location.hash) {
       const hash = window.location.hash.replace('#', '').trim() as AppView;
-      if (['home', 'library', 'about', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
+      if (['home', 'library', 'about', 'lounge', 'hall', 'donate', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
         return hash;
       }
     }
@@ -54,7 +62,11 @@ function AppContent() {
     }
     return false;
   });
+
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
+
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -69,7 +81,7 @@ function AppContent() {
     const handleHashChange = () => {
       if (typeof window !== 'undefined' && window.location.hash) {
         const hash = window.location.hash.replace('#', '').trim() as AppView;
-        if (['home', 'library', 'about', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
+        if (['home', 'library', 'about', 'lounge', 'hall', 'donate', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
           setCurrentView(hash);
         }
       }
@@ -115,8 +127,15 @@ function AppContent() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  // Open character modal & track character view for automated achievement badges
+  const handleOpenCharacterDetails = (char: Character) => {
+    setSelectedCharacterModal(char);
+    trackCharacterView(char.id);
+  };
+
   // Direct Google AI Studio Chat action
   const handleStartChat = (character: Character) => {
+    recordChatClick();
     if (character.chatUrl && isValidHttpsUrl(character.chatUrl)) {
       window.open(character.chatUrl, '_blank', 'noopener,noreferrer');
       showToast(
@@ -151,11 +170,9 @@ function AppContent() {
   const publishedCharacters = characters.filter((c) => c.status === 'published');
 
   const filteredCharacters = publishedCharacters.filter((char) => {
-    // Category filter
     if (selectedCategory && selectedCategory !== 'All' && char.category !== selectedCategory) {
       return false;
     }
-    // Search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchName = char.name.toLowerCase().includes(q);
@@ -179,7 +196,7 @@ function AppContent() {
             characters={characters}
             siteContent={siteContent}
             onRefreshData={refreshData}
-            onPreviewCharacter={(char) => setSelectedCharacterModal(char)}
+            onPreviewCharacter={(char) => handleOpenCharacterDetails(char)}
             onReturnToSite={() => navigateView('home')}
             onShowToast={showToast}
           />
@@ -198,6 +215,7 @@ function AppContent() {
             onStartChat={handleStartChat}
             onShowToast={showToast}
           />
+          <MusicPlayerWidget />
           <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         </>
       );
@@ -210,6 +228,10 @@ function AppContent() {
           currentView={currentView}
           onNavigate={navigateView}
           onOpenLogin={() => setIsLoginOpen(true)}
+          onOpenAuthModal={(mode) => {
+            setAuthModalMode(mode || 'login');
+            setIsAuthModalOpen(true);
+          }}
         />
         <div className="flex-1 flex items-center justify-center p-4">
           <AdminSetup
@@ -227,6 +249,7 @@ function AppContent() {
           onOpenLogin={() => setIsLoginOpen(true)}
           isAdmin={isAdmin}
         />
+        <MusicPlayerWidget />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </div>
     );
@@ -235,14 +258,13 @@ function AppContent() {
   // Handle dedicated Admin Login view
   if (currentView === 'admin-login') {
     if (isAdmin) {
-      // Auto-transition authenticated admin to the dashboard
       return (
         <>
           <AdminDashboard
             characters={characters}
             siteContent={siteContent}
             onRefreshData={refreshData}
-            onPreviewCharacter={(char) => setSelectedCharacterModal(char)}
+            onPreviewCharacter={(char) => handleOpenCharacterDetails(char)}
             onReturnToSite={() => navigateView('home')}
             onShowToast={showToast}
           />
@@ -261,6 +283,7 @@ function AppContent() {
             onStartChat={handleStartChat}
             onShowToast={showToast}
           />
+          <MusicPlayerWidget />
           <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         </>
       );
@@ -273,6 +296,10 @@ function AppContent() {
           currentView={currentView}
           onNavigate={navigateView}
           onOpenLogin={() => setIsLoginOpen(true)}
+          onOpenAuthModal={(mode) => {
+            setAuthModalMode(mode || 'login');
+            setIsAuthModalOpen(true);
+          }}
         />
         <div className="flex-1 flex items-center justify-center p-4">
           <AdminLogin
@@ -307,6 +334,10 @@ function AppContent() {
             currentView={currentView}
             onNavigate={navigateView}
             onOpenLogin={() => setIsLoginOpen(true)}
+            onOpenAuthModal={(mode) => {
+              setAuthModalMode(mode || 'login');
+              setIsAuthModalOpen(true);
+            }}
           />
           <div className="flex-1 flex items-center justify-center p-6 text-center">
             <div className="max-w-md bg-white p-8 rounded-3xl border border-[#F1D4DF] shadow-sm space-y-4">
@@ -359,7 +390,7 @@ function AppContent() {
           characters={characters}
           siteContent={siteContent}
           onRefreshData={refreshData}
-          onPreviewCharacter={(char) => setSelectedCharacterModal(char)}
+          onPreviewCharacter={(char) => handleOpenCharacterDetails(char)}
           onReturnToSite={() => navigateView('home')}
           onShowToast={showToast}
         />
@@ -399,6 +430,10 @@ function AppContent() {
         currentView={currentView}
         onNavigate={navigateView}
         onOpenLogin={() => setIsLoginOpen(true)}
+        onOpenAuthModal={(mode) => {
+          setAuthModalMode(mode || 'login');
+          setIsAuthModalOpen(true);
+        }}
       />
 
       {/* Main Body per View */}
@@ -446,7 +481,7 @@ function AppContent() {
                       <CharacterCard
                         key={char.id}
                         character={char}
-                        onOpenDetails={(c) => setSelectedCharacterModal(c)}
+                        onOpenDetails={handleOpenCharacterDetails}
                         onOpenScenario={(c) => setSelectedScenarioModal(c)}
                         onStartChat={handleStartChat}
                         onViewChat={handleViewChat}
@@ -530,7 +565,7 @@ function AppContent() {
                   <CharacterCard
                     key={char.id}
                     character={char}
-                    onOpenDetails={(c) => setSelectedCharacterModal(c)}
+                    onOpenDetails={handleOpenCharacterDetails}
                     onOpenScenario={(c) => setSelectedScenarioModal(c)}
                     onStartChat={handleStartChat}
                     onViewChat={handleViewChat}
@@ -539,6 +574,30 @@ function AppContent() {
               </div>
             )}
           </div>
+        )}
+
+        {currentView === 'lounge' && (
+          <TheLounge
+            onOpenAuth={(mode) => {
+              setAuthModalMode(mode || 'login');
+              setIsAuthModalOpen(true);
+            }}
+            onShowToast={showToast}
+          />
+        )}
+
+        {currentView === 'hall' && (
+          <HallOfFame />
+        )}
+
+        {currentView === 'donate' && (
+          <DonatePage
+            onOpenAuth={(mode) => {
+              setAuthModalMode(mode || 'login');
+              setIsAuthModalOpen(true);
+            }}
+            onShowToast={showToast}
+          />
         )}
 
         {currentView === 'about' && (
@@ -591,8 +650,24 @@ function AppContent() {
         }}
       />
 
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        initialMode={authModalMode}
+        onShowToast={showToast}
+      />
+
+      <MemberProfileModal
+        userId={viewMemberProfileId}
+        onClose={closeMemberProfileModal}
+        onShowToast={showToast}
+      />
+
       {/* Global Floating Music Player */}
       <MusicPlayerWidget />
+
+      {/* Global Magic Touch Sparkle Effect */}
+      <MagicTouch />
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
@@ -600,11 +675,23 @@ function AppContent() {
 }
 
 export default function App() {
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const handleShowToast = (type: 'success' | 'error' | 'info', title: string, message?: string) => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts((prev) => [...prev, { id, type, title, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4500);
+  };
+
   return (
     <AuthProvider>
-      <MusicProvider>
-        <AppContent />
-      </MusicProvider>
+      <CommunityProvider onShowToast={handleShowToast}>
+        <MusicProvider>
+          <AppContent />
+        </MusicProvider>
+      </CommunityProvider>
     </AuthProvider>
   );
 }

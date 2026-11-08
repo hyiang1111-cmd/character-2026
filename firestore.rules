@@ -63,15 +63,46 @@ service cloud.firestore {
     // Settings Collection (Site Content, Custom Copy & Music Settings)
     // Public visitors can read, only verified administrators can write
     match /settings/{settingId} {
-      allow get, list: if isValidId(settingId);
+      allow get: if isValidId(settingId);
+      allow list: if true;
       allow create, update, delete: if isAdmin() && isValidId(settingId);
     }
 
     // Music Tracks Collection
-    // Public visitors can read, only verified administrators can create, update, delete
+    // Public visitors can only list/get public tracks.
+    // Verified administrators can view all (public & hidden), create, update, or delete.
     match /music_tracks/{trackId} {
-      allow get, list: if isValidId(trackId);
-      allow create, update, delete: if isAdmin() && isValidId(trackId);
+      allow get: if isValidId(trackId) && (
+        (resource.data.isPublic == true) ||
+        (resource.data.status == 'published') ||
+        isAdmin()
+      );
+
+      allow list: if (
+        (resource.data.isPublic == true) ||
+        (resource.data.status == 'published') ||
+        isAdmin()
+      );
+
+      allow create: if isAdmin() &&
+        isValidId(trackId) &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() > 0 &&
+        request.resource.data.title.size() <= 300 &&
+        request.resource.data.url is string &&
+        request.resource.data.url.size() > 0 &&
+        request.resource.data.url.size() <= 2000;
+
+      allow update: if isAdmin() &&
+        isValidId(trackId) &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() > 0 &&
+        request.resource.data.title.size() <= 300 &&
+        request.resource.data.url is string &&
+        request.resource.data.url.size() > 0 &&
+        request.resource.data.url.size() <= 2000;
+
+      allow delete: if isAdmin() && isValidId(trackId);
     }
 
     // System Status Collection (Admin First-Time Initialization Lock)

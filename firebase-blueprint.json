@@ -84,14 +84,16 @@
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 128 },
-        "title": { "type": "string", "maxLength": 200 },
-        "url": { "type": "string", "maxLength": 5000 },
+        "title": { "type": "string", "maxLength": 300 },
+        "artist": { "type": "string", "maxLength": 200 },
+        "coverUrl": { "type": "string", "maxLength": 2000 },
+        "url": { "type": "string", "maxLength": 2000 },
         "format": { "type": "string", "maxLength": 50 },
-        "sizeBytes": { "type": "number" },
-        "sizeFormatted": { "type": "string", "maxLength": 50 },
-        "storagePath": { "type": "string", "maxLength": 500 },
+        "isPublic": { "type": "boolean" },
         "isActive": { "type": "boolean" },
+        "order": { "type": "number" },
         "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
         "uploadedBy": { "type": "string", "maxLength": 150 }
       },
       "required": ["title", "url"]
