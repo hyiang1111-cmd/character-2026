@@ -15,6 +15,9 @@ import { Hero } from './components/public/Hero';
 import { CharacterCard } from './components/public/CharacterCard';
 import { CharacterModal } from './components/public/CharacterModal';
 import { ScenarioModal } from './components/public/ScenarioModal';
+import { WelcomeScreen } from './components/common/WelcomeScreen';
+import { MusicPlayerWidget } from './components/common/MusicPlayerWidget';
+import { MusicProvider } from './context/MusicContext';
 import { AboutSection } from './components/public/AboutSection';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AdminLogin } from './components/admin/AdminLogin';
@@ -44,6 +47,13 @@ function AppContent() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedCharacterModal, setSelectedCharacterModal] = useState<Character | null>(null);
   const [selectedScenarioModal, setSelectedScenarioModal] = useState<Character | null>(null);
+  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      if (window.location.hash.includes('admin')) return false;
+      return sessionStorage.getItem('pca_welcome_entered') !== 'true';
+    }
+    return false;
+  });
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -281,6 +291,7 @@ function AppContent() {
           onOpenLogin={() => setIsLoginOpen(true)}
           isAdmin={isAdmin}
         />
+        <MusicPlayerWidget />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </div>
     );
@@ -367,6 +378,7 @@ function AppContent() {
           onStartChat={handleStartChat}
           onShowToast={showToast}
         />
+        <MusicPlayerWidget />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </>
     );
@@ -374,6 +386,13 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-[#FFF5F7] flex flex-col text-[#51434A]">
+      {showWelcome && (
+        <WelcomeScreen
+          siteName={siteContent.siteName || 'Pink Character Archive'}
+          onEnter={() => setShowWelcome(false)}
+        />
+      )}
+
       {/* Global Header */}
       <Header
         siteContent={siteContent}
@@ -572,6 +591,9 @@ function AppContent() {
         }}
       />
 
+      {/* Global Floating Music Player */}
+      <MusicPlayerWidget />
+
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
@@ -580,7 +602,9 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <MusicProvider>
+        <AppContent />
+      </MusicProvider>
     </AuthProvider>
   );
 }

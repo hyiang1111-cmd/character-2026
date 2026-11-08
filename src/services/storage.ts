@@ -1,8 +1,10 @@
 import { Character } from '../types/character';
 import { SiteContent, DEFAULT_SITE_CONTENT } from '../types/site';
+import { MusicTrack, MusicSettings, DEFAULT_MUSIC_SETTINGS } from '../types/music';
 import {
   db,
   auth,
+  storage,
   handleFirestoreError,
   OperationType,
   checkServerAdminAuthorization
@@ -17,11 +19,19 @@ import {
   onSnapshot,
   query,
   where,
-  orderBy
+  orderBy,
+  writeBatch
 } from 'firebase/firestore';
+import {
+  ref,
+  uploadBytesResumable,
+  getDownloadURL,
+  deleteObject
+} from 'firebase/storage';
 
 const CHARACTERS_PATH = 'characters';
 const SETTINGS_PATH = 'settings';
+const MUSIC_TRACKS_PATH = 'music_tracks';
 
 /**
  * Loads characters from Cloud Firestore.
@@ -308,3 +318,272 @@ export function subscribeToCharacters(
 
   return unsubscribe;
 }
+
+// ==========================================
+// BACKGROUND MUSIC MANAGEMENT (ADMIN & PUBLIC)
+// ==========================================
+
+const MUSIC_SETTINGS_DOC = `${SETTINGS_PATH}/music_settings`;
+
+/**
+ * Loads current background music settings from Firestore.
+ */
+export async function getMusicSettings(): Promise<MusicSettings> {
+  try {
+    const snap = await getDoc(doc(db, SETTINGS_PATH, 'music_settings'));
+    if (snap.exists()) {
+      return {
+        ...DEFAULT_MUSIC_SETTINGS,
+        ...(snap.data() as Partial<MusicSettings>),
+      };
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, MUSIC_SETTINGS_DOC);
+  }
+  return DEFAULT_MUSIC_SETTINGS;
+}
+
+/**
+ * Saves background music settings to Firestore.
+ * Requires verified administrator permissions.
+ */
+export async function saveMusicSettings(settings: Partial<MusicSettings>): Promise<void> {
+  const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
+  if (!isAuthorized) {
+    throw new Error('Unauthorized: Only verified administrators can update music settings.');
+  }
+
+  const updated: MusicSettings = {
+    ...DEFAULT_MUSIC_SETTINGS,
+    ...settings,
+    updatedAt: Date.now(),
+  };
+
+  try {
+    await setDoc(doc(db, SETTINGS_PATH, 'music_settings'), updated);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, MUSIC_SETTINGS_DOC);
+  }
+}
+
+/**
+ * Real-time subscription to background music settings.
+ */
+export function subscribeToMusicSettings(callback: (settings: MusicSettings) => void): () => void {
+  return onSnapshot(
+    doc(db, SETTINGS_PATH, 'music_settings'),
+    (snap) => {
+      if (snap.exists()) {
+        callback({
+          ...DEFAULT_MUSIC_SETTINGS,
+          ...(snap.data() as Partial<MusicSettings>),
+        });
+      } else {
+        callback(DEFAULT_MUSIC_SETTINGS);
+      }
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.GET, MUSIC_SETTINGS_DOC);
+    }
+  );
+}
+
+/**
+ * Fetches all uploaded music tracks from Firestore.
+ */
+export async function getMusicTracks(): Promise<MusicTrack[]> {
+  try {
+    const q = query(collection(db, MUSIC_TRACKS_PATH), orderBy('createdAt', 'desc'));
+    const snap = await getDocs(q);
+    const tracks: MusicTrack[] = [];
+    snap.forEach((d) => {
+      tracks.push({
+        id: d.id,
+        ...(d.data() as Omit<MusicTrack, 'id'>),
+      });
+    });
+    return tracks;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, MUSIC_TRACKS_PATH);
+    return [];
+  }
+}
+
+/**
+ * Saves a music track metadata entry in Firestore.
+ */
+export async function saveMusicTrack(track: MusicTrack): Promise<void> {
+  const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
+  if (!isAuthorized) {
+    throw new Error('Unauthorized: Only verified administrators can manage music tracks.');
+  }
+
+  const docPath = `${MUSIC_TRACKS_PATH}/${track.id}`;
+  try {
+    await setDoc(doc(db, MUSIC_TRACKS_PATH, track.id), track);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, docPath);
+  }
+}
+
+/**
+ * Sets a specific track as the active background music for the website.
+ */
+export async function setActiveMusicTrack(track: MusicTrack): Promise<void> {
+  const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
+  if (!isAuthorized) {
+    throw new Error('Unauthorized: Only verified administrators can set active music.');
+  }
+
+  try {
+    // 1. Fetch all tracks and update their isActive status
+    const allTracks = await getMusicTracks();
+    const batch = writeBatch(db);
+
+    allTracks.forEach((t) => {
+      const isTarget = t.id === track.id;
+      if (t.isActive !== isTarget) {
+        batch.update(doc(db, MUSIC_TRACKS_PATH, t.id), { isActive: isTarget });
+      }
+    });
+
+    // 2. Update global settings document
+    batch.set(
+      doc(db, SETTINGS_PATH, 'music_settings'),
+      {
+        enabled: true,
+        activeTrackId: track.id,
+        activeTrackUrl: track.url,
+        activeTrackTitle: track.title,
+        updatedAt: Date.now(),
+      },
+      { merge: true }
+    );
+
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, MUSIC_SETTINGS_DOC);
+  }
+}
+
+/**
+ * Deletes a music track from Firestore and optionally Firebase Storage.
+ */
+export async function deleteMusicTrack(trackId: string, storagePath?: string): Promise<void> {
+  const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
+  if (!isAuthorized) {
+    throw new Error('Unauthorized: Only verified administrators can delete music tracks.');
+  }
+
+  try {
+    // Delete file from Firebase Storage if path provided
+    if (storage && storagePath) {
+      try {
+        const fileRef = ref(storage, storagePath);
+        await deleteObject(fileRef);
+      } catch (storageErr) {
+        console.warn('Could not delete file from Cloud Storage:', storageErr);
+      }
+    }
+
+    // Delete Firestore document
+    await deleteDoc(doc(db, MUSIC_TRACKS_PATH, trackId));
+
+    // If active track was deleted, reset settings active track
+    const settings = await getMusicSettings();
+    if (settings.activeTrackId === trackId) {
+      await saveMusicSettings({
+        ...settings,
+        activeTrackId: null,
+        activeTrackUrl: '/audio/background-music.mp3',
+        activeTrackTitle: 'Default Archive Melody',
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `${MUSIC_TRACKS_PATH}/${trackId}`);
+  }
+}
+
+/**
+ * Subscribes to real-time updates for music tracks.
+ */
+export function subscribeToMusicTracks(callback: (tracks: MusicTrack[]) => void): () => void {
+  const q = query(collection(db, MUSIC_TRACKS_PATH), orderBy('createdAt', 'desc'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const tracks: MusicTrack[] = [];
+      snap.forEach((d) => {
+        tracks.push({
+          id: d.id,
+          ...(d.data() as Omit<MusicTrack, 'id'>),
+        });
+      });
+      callback(tracks);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, MUSIC_TRACKS_PATH);
+    }
+  );
+}
+
+/**
+ * Uploads an audio file to Firebase Storage.
+ * Validates maximum file size (up to 25MB) and audio MIME types.
+ */
+export async function uploadMusicFile(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<{ url: string; storagePath: string }> {
+  const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
+  if (!isAuthorized) {
+    throw new Error('Unauthorized: Only verified administrators can upload music.');
+  }
+
+  // 25MB limit
+  const MAX_SIZE = 25 * 1024 * 1024;
+  if (file.size > MAX_SIZE) {
+    throw new Error(`Dung lượng file (${(file.size / (1024 * 1024)).toFixed(1)} MB) vượt quá giới hạn tối đa cho phép là 25 MB.`);
+  }
+
+  if (!storage) {
+    throw new Error('Firebase Storage chưa được khởi tạo. Bạn có thể sử dụng link âm thanh trực tiếp.');
+  }
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const storagePath = `music/${Date.now()}_${safeName}`;
+  const fileRef = ref(storage, storagePath);
+
+  const uploadTask = uploadBytesResumable(fileRef, file, {
+    contentType: file.type || 'audio/mpeg',
+  });
+
+  return new Promise((resolve, reject) => {
+    uploadTask.on(
+      'state_changed',
+      (snapshot) => {
+        const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        if (onProgress) {
+          onProgress(Math.round(progress));
+        }
+      },
+      (error) => {
+        console.error('Firebase Storage upload error:', error);
+        reject(
+          new Error(
+            `Lỗi khi tải file lên máy chủ lưu trữ: ${error.message || 'Vui lòng kiểm tra quyền truy cập Storage'}`
+          )
+        );
+      },
+      async () => {
+        try {
+          const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+          resolve({ url: downloadUrl, storagePath });
+        } catch (err) {
+          reject(err);
+        }
+      }
+    );
+  });
+}
+

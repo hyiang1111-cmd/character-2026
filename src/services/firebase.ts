@@ -15,6 +15,7 @@ import {
   getDocFromServer,
   writeBatch
 } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 export const DESIGNATED_ADMIN_EMAIL = 'giangbjyx2026@gmail.com';
@@ -24,6 +25,9 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 // Initialize Firestore with specific database ID from config
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Initialize Cloud Storage
+export const storage = getStorage(app);
 
 // Initialize Authentication
 export const auth = getAuth(app);

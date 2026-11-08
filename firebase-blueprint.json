@@ -77,6 +77,24 @@
         "initializedAt": { "type": "number" }
       },
       "required": ["isInitialized", "adminUid", "adminEmail"]
+    },
+    "MusicTrack": {
+      "title": "MusicTrack",
+      "description": "Background music track metadata.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "url": { "type": "string", "maxLength": 5000 },
+        "format": { "type": "string", "maxLength": 50 },
+        "sizeBytes": { "type": "number" },
+        "sizeFormatted": { "type": "string", "maxLength": 50 },
+        "storagePath": { "type": "string", "maxLength": 500 },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "number" },
+        "uploadedBy": { "type": "string", "maxLength": 150 }
+      },
+      "required": ["title", "url"]
     }
   },
   "firestore": {
@@ -87,6 +105,10 @@
     "/settings/{settingId}": {
       "schema": "SiteSettings",
       "description": "Global application and editorial settings."
+    },
+    "/music_tracks/{trackId}": {
+      "schema": "MusicTrack",
+      "description": "Collection of uploaded background music tracks."
     },
     "/admins/{adminId}": {
       "schema": "Admin",

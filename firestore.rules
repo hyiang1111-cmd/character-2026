@@ -60,11 +60,18 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(characterId);
     }
 
-    // Settings Collection (Site Content & Custom Copy)
+    // Settings Collection (Site Content, Custom Copy & Music Settings)
     // Public visitors can read, only verified administrators can write
     match /settings/{settingId} {
       allow get, list: if isValidId(settingId);
       allow create, update, delete: if isAdmin() && isValidId(settingId);
+    }
+
+    // Music Tracks Collection
+    // Public visitors can read, only verified administrators can create, update, delete
+    match /music_tracks/{trackId} {
+      allow get, list: if isValidId(trackId);
+      allow create, update, delete: if isAdmin() && isValidId(trackId);
     }
 
     // System Status Collection (Admin First-Time Initialization Lock)
