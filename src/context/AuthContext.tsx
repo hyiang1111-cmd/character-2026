@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   auth,
-  loginWithGoogle,
-  loginWithEmailPassword,
-  createAdminAccount,
-  sendAdminPasswordReset,
+  checkSystemAdminStatus,
+  setupFirstTimeAdmin as apiSetupFirstTimeAdmin,
+  loginWithEmailPassword as apiLoginWithEmailPassword,
+  loginWithGoogle as apiLoginWithGoogle,
   logoutFirebase,
   checkServerAdminAuthorization,
+  parseFriendlyErrorMessage,
   DESIGNATED_ADMIN_EMAIL
 } from '../services/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -14,13 +15,16 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 interface AuthContextType {
   isAdmin: boolean;
   currentUser: { email: string | null; name: string | null; uid: string | null } | null;
+  isSystemInitialized: boolean | null;
+  adminEmail: string | null;
   designatedAdminEmail: string;
   isAuthenticating: boolean;
   authError: string | null;
+  refreshSystemStatus: () => Promise<boolean>;
+  setupFirstTimeAdmin: (email: string, pass: string) => Promise<void>;
+  loginWithEmailPassword: (email: string, pass: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   loginAsAdmin: () => Promise<void>;
-  loginWithPassword: (password: string) => Promise<void>;
-  setupAdminPassword: (password: string) => Promise<void>;
-  resetAdminPassword: () => Promise<void>;
   logout: () => Promise<void>;
   clearAuthError: () => void;
 }
@@ -28,13 +32,16 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
   currentUser: null,
+  isSystemInitialized: null,
+  adminEmail: null,
   designatedAdminEmail: DESIGNATED_ADMIN_EMAIL,
-  isAuthenticating: false,
+  isAuthenticating: true,
   authError: null,
+  refreshSystemStatus: async () => false,
+  setupFirstTimeAdmin: async () => {},
+  loginWithEmailPassword: async () => {},
+  loginWithGoogle: async () => {},
   loginAsAdmin: async () => {},
-  loginWithPassword: async () => {},
-  setupAdminPassword: async () => {},
-  resetAdminPassword: async () => {},
   logout: async () => {},
   clearAuthError: () => {},
 });
@@ -42,15 +49,36 @@ const AuthContext = createContext<AuthContextType>({
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<{ email: string | null; name: string | null; uid: string | null } | null>(null);
+  const [isSystemInitialized, setIsSystemInitialized] = useState<boolean | null>(null);
+  const [adminEmail, setAdminEmail] = useState<string | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(true);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  // Check system initialization state
+  const refreshSystemStatus = async (): Promise<boolean> => {
+    try {
+      const status = await checkSystemAdminStatus();
+      setIsSystemInitialized(status.isInitialized);
+      if (status.adminEmail) {
+        setAdminEmail(status.adminEmail);
+      }
+      return status.isInitialized;
+    } catch (e) {
+      console.warn('Failed to refresh system status:', e);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    refreshSystemStatus();
+  }, []);
 
   // Monitor real Firebase Auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user: User | null) => {
       setIsAuthenticating(true);
       if (user) {
-        // Strict server & database verification
+        // Strict database authorization check
         const authorized = await checkServerAdminAuthorization(user);
         if (authorized) {
           setIsAdmin(true);
@@ -65,9 +93,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsAdmin(false);
           setCurrentUser(null);
           await logoutFirebase();
-          setAuthError(
-            `Access Denied: Account (${user.email}) is not an authorized administrator. Only ${DESIGNATED_ADMIN_EMAIL} is granted administrator rights.`
-          );
         }
       } else {
         setIsAdmin(false);
@@ -79,22 +104,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  const loginAsAdmin = async () => {
+  // First-time Admin Setup handler
+  const setupFirstTimeAdmin = async (email: string, pass: string) => {
     setIsAuthenticating(true);
     setAuthError(null);
     try {
-      const user = await loginWithGoogle();
-      const authorized = await checkServerAdminAuthorization(user);
+      const user = await apiSetupFirstTimeAdmin(email, pass);
+      setIsAdmin(true);
+      setCurrentUser({
+        email: user.email,
+        name: 'Administrator',
+        uid: user.uid,
+      });
+      setIsSystemInitialized(true);
+      setAdminEmail(user.email || email);
+    } catch (err: any) {
+      const friendly = parseFriendlyErrorMessage(err);
+      setAuthError(friendly);
+      setIsAdmin(false);
+      setCurrentUser(null);
+      throw new Error(friendly);
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
 
-      if (!authorized) {
-        setIsAdmin(false);
-        setCurrentUser(null);
-        await logoutFirebase();
-        throw new Error(
-          `Access Denied: Account ${user.email} is not authorized. Only the designated administrator (${DESIGNATED_ADMIN_EMAIL}) has curator access.`
-        );
-      }
+  // Admin Login with Email & Password
+  const loginWithEmailPassword = async (email: string, pass: string) => {
+    setIsAuthenticating(true);
+    setAuthError(null);
+    try {
+      const user = await apiLoginWithEmailPassword(email, pass);
+      setIsAdmin(true);
+      setCurrentUser({
+        email: user.email,
+        name: 'Administrator',
+        uid: user.uid,
+      });
+    } catch (err: any) {
+      const friendly = parseFriendlyErrorMessage(err);
+      setAuthError(friendly);
+      setIsAdmin(false);
+      setCurrentUser(null);
+      throw new Error(friendly);
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
 
+  // Google Sign-In Fallback
+  const loginWithGoogle = async () => {
+    setIsAuthenticating(true);
+    setAuthError(null);
+    try {
+      const user = await apiLoginWithGoogle();
       setIsAdmin(true);
       setCurrentUser({
         email: user.email,
@@ -102,72 +165,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         uid: user.uid,
       });
     } catch (err: any) {
-      const message = err?.message || 'Authentication failed. Please verify administrator credentials.';
-      setAuthError(message);
+      const friendly = parseFriendlyErrorMessage(err);
+      setAuthError(friendly);
       setIsAdmin(false);
       setCurrentUser(null);
-      throw err;
+      throw new Error(friendly);
     } finally {
       setIsAuthenticating(false);
-    }
-  };
-
-  const loginWithPassword = async (password: string) => {
-    setIsAuthenticating(true);
-    setAuthError(null);
-    try {
-      const user = await loginWithEmailPassword(DESIGNATED_ADMIN_EMAIL, password);
-      const authorized = await checkServerAdminAuthorization(user);
-
-      if (!authorized) {
-        setIsAdmin(false);
-        setCurrentUser(null);
-        await logoutFirebase();
-        throw new Error(`Access Denied: Account ${user.email} is not authorized.`);
-      }
-
-      setIsAdmin(true);
-      setCurrentUser({
-        email: user.email,
-        name: 'Administrator',
-        uid: user.uid,
-      });
-    } catch (err: any) {
-      const message = err?.message || 'Authentication failed. Please check password.';
-      setAuthError(message);
-      setIsAdmin(false);
-      setCurrentUser(null);
-      throw err;
-    } finally {
-      setIsAuthenticating(false);
-    }
-  };
-
-  const setupAdminPassword = async (password: string) => {
-    setIsAuthenticating(true);
-    setAuthError(null);
-    try {
-      const user = await createAdminAccount(DESIGNATED_ADMIN_EMAIL, password);
-      setIsAdmin(true);
-      setCurrentUser({
-        email: user.email,
-        name: 'Administrator',
-        uid: user.uid,
-      });
-    } catch (err: any) {
-      const message = err?.message || 'Failed to setup admin account.';
-      setAuthError(message);
-      throw err;
-    } finally {
-      setIsAuthenticating(false);
-    }
-  };
-
-  const resetAdminPassword = async () => {
-    try {
-      await sendAdminPasswordReset(DESIGNATED_ADMIN_EMAIL);
-    } catch (err: any) {
-      throw err;
     }
   };
 
@@ -190,13 +194,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         isAdmin,
         currentUser,
+        isSystemInitialized,
+        adminEmail,
         designatedAdminEmail: DESIGNATED_ADMIN_EMAIL,
         isAuthenticating,
         authError,
-        loginAsAdmin,
-        loginWithPassword,
-        setupAdminPassword,
-        resetAdminPassword,
+        refreshSystemStatus,
+        setupFirstTimeAdmin,
+        loginWithEmailPassword,
+        loginWithGoogle,
+        loginAsAdmin: loginWithGoogle,
         logout,
         clearAuthError,
       }}

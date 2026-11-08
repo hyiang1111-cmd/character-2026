@@ -15,13 +15,19 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    // Strict Admin Authorization
+    // Verified by existence of admin record or matched adminUid in system/admin_status
     function isAdmin() {
       return isSignedIn() && (
-        (request.auth.token.email != null && (
-          request.auth.token.email == 'giangbjyx2026@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (
+          exists(/databases/$(database)/documents/system/admin_status) &&
+          get(/databases/$(database)/documents/system/admin_status).data.adminUid == request.auth.uid
+        ) ||
+        (
+          request.auth.token.email != null &&
           request.auth.token.email.matches('(?i)^giangbjyx2026@gmail\\.com$')
-        )) ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        )
       );
     }
 
@@ -61,11 +67,39 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin() && isValidId(settingId);
     }
 
+    // System Status Collection (Admin First-Time Initialization Lock)
+    // Public visitors can read to check if admin setup has already been initialized.
+    // Can only be created once when admin_status does not exist yet.
+    // Permanent lock: update and delete are strictly forbidden.
+    match /system/{systemId} {
+      allow get: if isValidId(systemId);
+      allow list: if false;
+      allow create: if isSignedIn() &&
+        systemId == 'admin_status' &&
+        !exists(/databases/$(database)/documents/system/admin_status) &&
+        request.resource.data.isInitialized == true &&
+        request.resource.data.adminUid == request.auth.uid &&
+        request.resource.data.adminEmail is string &&
+        request.resource.data.adminEmail.size() > 3;
+      allow update, delete: if false;
+    }
+
     // Admins Collection
+    // Admin record can be created during first-time setup or by an authenticated admin.
+    // Once created, deletion is prevented to protect curator authority.
     match /admins/{adminId} {
       allow get: if isSignedIn() && (request.auth.uid == adminId || isAdmin());
       allow list: if isAdmin();
-      allow create, update, delete: if isAdmin() && isValidId(adminId);
+      allow create: if isSignedIn() &&
+        isValidId(adminId) &&
+        request.auth.uid == adminId &&
+        (
+          !exists(/databases/$(database)/documents/system/admin_status) ||
+          isAdmin()
+        ) &&
+        request.resource.data.role == 'admin';
+      allow update: if isAdmin() && isValidId(adminId);
+      allow delete: if false;
     }
 
     // Connection Health Test Path

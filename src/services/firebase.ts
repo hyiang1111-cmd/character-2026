@@ -12,7 +12,8 @@ import {
   getFirestore,
   doc,
   getDoc,
-  getDocFromServer
+  getDocFromServer,
+  writeBatch
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -92,13 +93,43 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 }
 
 /**
- * Parses technical Firestore/Firebase errors into actionable human-readable messages.
+ * Validates password strength according to security standards:
+ * - Minimum 8 characters
+ * - At least 1 uppercase letter
+ * - At least 1 lowercase letter
+ * - At least 1 digit
+ * - At least 1 special character
+ */
+export function validatePasswordStrength(password: string): { isValid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (!password || password.length < 8) {
+    errors.push('Mật khẩu phải có độ dài tối thiểu 8 ký tự');
+  }
+  if (!/[A-Z]/.test(password)) {
+    errors.push('Mật khẩu phải chứa ít nhất 1 chữ cái in hoa (A-Z)');
+  }
+  if (!/[a-z]/.test(password)) {
+    errors.push('Mật khẩu phải chứa ít nhất 1 chữ cái in thường (a-z)');
+  }
+  if (!/[0-9]/.test(password)) {
+    errors.push('Mật khẩu phải chứa ít nhất 1 chữ số (0-9)');
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    errors.push('Mật khẩu phải chứa ít nhất 1 ký tự đặc biệt (!@#$%^&*...)');
+  }
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+}
+
+/**
+ * Parses technical Firestore/Firebase errors into clear, actionable human-readable messages.
  */
 export function parseFriendlyErrorMessage(error: unknown): string {
-  if (!error) return 'An unexpected error occurred while saving.';
+  if (!error) return 'Đã xảy ra lỗi không xác định.';
   const msg = error instanceof Error ? error.message : String(error);
 
-  // If already a JSON string from handleFirestoreError, parse it first
   try {
     if (msg.startsWith('{') && msg.includes('"error"')) {
       const parsed = JSON.parse(msg);
@@ -113,67 +144,158 @@ export function parseFriendlyErrorMessage(error: unknown): string {
     msg.includes('PERMISSION_DENIED') ||
     msg.includes('Missing or insufficient permissions')
   ) {
-    return `Firestore Write Permission Denied: Only the verified administrator (${DESIGNATED_ADMIN_EMAIL}) is permitted to create or update characters. Please ensure you are signed in.`;
+    return 'Từ chối quyền truy cập (Permission Denied): Thao tác bị chặn bởi Firebase Security Rules. Chỉ Quản trị viên đã xác thực mới có quyền quản lý.';
   }
 
   if (msg.includes('auth/unauthorized-domain')) {
-    return 'Domain Not Authorized in Firebase: This website domain (e.g. Vercel deployment) has not been added to your Firebase project. In Firebase Console, go to Authentication > Settings > Authorized Domains and add your site domain.';
-  }
-
-  if (msg.includes('auth/popup-blocked')) {
-    return 'Browser Popup Blocked: Please allow popups for this site in your browser address bar and try again.';
-  }
-
-  if (msg.includes('client is offline') || msg.includes('unavailable')) {
-    return 'Network Connection Error: Could not connect to Google Cloud Firestore. Please check your internet connection and try again.';
-  }
-
-  if (msg.includes('Unsupported field value: undefined')) {
-    return 'Data Format Error: An undefined field was passed to Firestore. The character payload must use empty strings or null.';
+    return 'Tên miền chưa được cấp phép (Unauthorized Domain): Tên miền Vercel hiện tại chưa được thêm vào mục Authorized Domains trong Firebase Console (Authentication > Settings > Authorized Domains).';
   }
 
   if (msg.includes('auth/wrong-password') || msg.includes('auth/invalid-credential')) {
-    return 'Invalid Credentials: The password entered does not match the administrator account.';
+    return 'Mật khẩu không chính xác hoặc thông tin đăng nhập không hợp lệ. Vui lòng kiểm tra lại.';
   }
 
   if (msg.includes('auth/user-not-found')) {
-    return 'Admin Account Not Found: No administrator account exists with this email yet. You can initialize your administrator account below.';
+    return 'Tài khoản không tồn tại. Vui lòng kiểm tra lại email đăng nhập hoặc thực hiện thiết lập Admin lần đầu nếu hệ thống chưa khởi tạo.';
+  }
+
+  if (msg.includes('auth/weak-password')) {
+    return 'Mật khẩu quá yếu: Vui lòng sử dụng tối thiểu 8 ký tự, bao gồm chữ hoa, chữ thường, số và ký tự đặc biệt.';
+  }
+
+  if (msg.includes('auth/invalid-email')) {
+    return 'Địa chỉ email không đúng định dạng.';
+  }
+
+  if (msg.includes('auth/operation-not-allowed')) {
+    return 'Tính năng Email/Mật khẩu chưa được bật trong Firebase Console! Bạn vui lòng vào Firebase Console > Authentication > Sign-in method > Bật (Enable) Email/Password rồi bấm Lưu (Save).';
+  }
+
+  if (msg.includes('auth/email-already-in-use')) {
+    return 'Email này đã tồn tại trong Firebase Authentication. Bạn có thể nhập một Email Admin khác để tạo tài khoản mới.';
+  }
+
+  if (msg.includes('client is offline') || msg.includes('unavailable')) {
+    return 'Lỗi kết nối mạng: Không thể kết nối đến máy chủ Google Cloud Firebase. Vui lòng kiểm tra đường truyền.';
   }
 
   return msg;
 }
 
 /**
- * Signs in using Firebase Google Authentication popup.
+ * Checks if the system already has an initialized Admin account.
+ * Reads the protected /system/admin_status document.
+ */
+export async function checkSystemAdminStatus(): Promise<{ isInitialized: boolean; adminEmail?: string; adminUid?: string }> {
+  try {
+    const snap = await getDoc(doc(db, 'system', 'admin_status'));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data?.isInitialized) {
+        return {
+          isInitialized: true,
+          adminEmail: data.adminEmail,
+          adminUid: data.adminUid,
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('System status check note:', e);
+  }
+  return { isInitialized: false };
+}
+
+/**
+ * Sets up the first-time administrator account:
+ * 1. Validates password strength (min 8 chars, uppercase, lowercase, number, symbol).
+ * 2. Verifies system has not already been initialized in Firestore.
+ * 3. Creates the user credentials exclusively using createUserWithEmailAndPassword().
+ *    (NEVER calls signInWithEmailAndPassword, does not require an existing password).
+ * 4. Atomically creates /system/admin_status (permanent lock) and /admins/{uid}.
+ * 5. Permanent lock: Firestore security rules forbid any future update or deletion.
+ */
+export async function setupFirstTimeAdmin(email: string, pass: string): Promise<User> {
+  const cleanEmail = email.trim().toLowerCase();
+
+  // Validate strength
+  const strength = validatePasswordStrength(pass);
+  if (!strength.isValid) {
+    throw new Error(strength.errors.join('. '));
+  }
+
+  // Pre-check system status directly in database
+  const currentStatus = await checkSystemAdminStatus();
+  if (currentStatus.isInitialized) {
+    throw new Error('Hệ thống đã có Quản trị viên. Chức năng thiết lập lần đầu đã bị khóa vĩnh viễn vì lý do bảo mật.');
+  }
+
+  // Create new user credentials exclusively via createUserWithEmailAndPassword()
+  const { createUserWithEmailAndPassword } = await import('firebase/auth');
+  const cred = await createUserWithEmailAndPassword(auth, cleanEmail, pass);
+  const user = cred.user;
+
+  // Atomically initialize system status and admin record in Firestore
+  // Note: Passwords are NEVER saved in Firestore, only user metadata (UID, email, timestamp)
+  const batch = writeBatch(db);
+  const adminStatusRef = doc(db, 'system', 'admin_status');
+  const adminRecordRef = doc(db, 'admins', user.uid);
+
+  batch.set(adminStatusRef, {
+    isInitialized: true,
+    adminUid: user.uid,
+    adminEmail: cleanEmail,
+    initializedAt: Date.now(),
+  });
+
+  batch.set(adminRecordRef, {
+    email: cleanEmail,
+    role: 'admin',
+    addedAt: Date.now(),
+  });
+
+  await batch.commit();
+
+  return user;
+}
+
+/**
+ * Signs in using Firebase Email and Password.
+ * Stays strictly within the current origin on Vercel without navigating away.
+ * Verifies that the signed-in user is an authorized administrator.
+ */
+export async function loginWithEmailPassword(email: string, pass: string): Promise<User> {
+  const { signInWithEmailAndPassword } = await import('firebase/auth');
+  const cleanEmail = email.trim().toLowerCase();
+  const result = await signInWithEmailAndPassword(auth, cleanEmail, pass);
+  const user = result.user;
+
+  // Strict server & database verification
+  const isAuthorized = await checkServerAdminAuthorization(user);
+  if (!isAuthorized) {
+    await fbSignOut(auth);
+    throw new Error('Truy cập bị từ chối: Tài khoản này không có quyền Quản trị viên.');
+  }
+
+  return user;
+}
+
+/**
+ * Signs in using Firebase Google Authentication popup (optional fallback).
  * Stays strictly within the current origin without navigating away.
  */
 export async function loginWithGoogle(): Promise<User> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   const result = await signInWithPopup(auth, provider);
-  return result.user;
-}
+  const user = result.user;
 
-/**
- * Signs in using Firebase Email and Password.
- * Provides a reliable, popup-free alternative on custom domains and mobile Safari.
- */
-export async function loginWithEmailPassword(email: string, pass: string): Promise<User> {
-  const { signInWithEmailAndPassword } = await import('firebase/auth');
-  const result = await signInWithEmailAndPassword(auth, email.trim(), pass);
-  return result.user;
-}
-
-/**
- * Creates administrator credentials in Firebase Authentication for the designated administrator.
- */
-export async function createAdminAccount(email: string, pass: string): Promise<User> {
-  const { createUserWithEmailAndPassword } = await import('firebase/auth');
-  if (email.trim().toLowerCase() !== DESIGNATED_ADMIN_EMAIL.toLowerCase()) {
-    throw new Error(`Unauthorized registration: Only ${DESIGNATED_ADMIN_EMAIL} can be provisioned as administrator.`);
+  const isAuthorized = await checkServerAdminAuthorization(user);
+  if (!isAuthorized) {
+    await fbSignOut(auth);
+    throw new Error('Truy cập bị từ chối: Tài khoản Google này không có quyền Quản trị viên.');
   }
-  const result = await createUserWithEmailAndPassword(auth, email.trim(), pass);
-  return result.user;
+
+  return user;
 }
 
 /**
@@ -193,29 +315,34 @@ export async function logoutFirebase(): Promise<void> {
 
 /**
  * Checks server/database administrator authorization.
- * A user is an authorized administrator only if:
- * 1. User is authenticated with Firebase.
- * 2. User's email matches DESIGNATED_ADMIN_EMAIL (case-insensitive).
- * 3. Or exists in the protected /admins/{uid} collection.
+ * Evaluates against /system/admin_status, /admins/{uid}, and designated email.
  */
 export async function checkServerAdminAuthorization(user: User | null): Promise<boolean> {
-  if (!user || !user.email) return false;
-
-  const email = user.email.toLowerCase().trim();
-  const designated = DESIGNATED_ADMIN_EMAIL.toLowerCase().trim();
-
-  if (email === designated) {
-    return true;
-  }
+  if (!user || !user.uid) return false;
 
   try {
+    // 1. Verify against /system/admin_status
+    const statusSnap = await getDoc(doc(db, 'system', 'admin_status'));
+    if (statusSnap.exists()) {
+      const data = statusSnap.data();
+      if (data?.isInitialized && data?.adminUid === user.uid) {
+        return true;
+      }
+    }
+
+    // 2. Verify against /admins/{uid}
     const adminDocRef = doc(db, 'admins', user.uid);
     const snap = await getDoc(adminDocRef);
-    if (snap.exists()) {
+    if (snap.exists() && snap.data()?.role === 'admin') {
+      return true;
+    }
+
+    // 3. Fallback: designated admin email
+    if (user.email && user.email.toLowerCase().trim() === DESIGNATED_ADMIN_EMAIL.toLowerCase()) {
       return true;
     }
   } catch (e) {
-    console.warn('Admin check note:', e);
+    console.warn('Admin authorization verification note:', e);
   }
 
   return false;

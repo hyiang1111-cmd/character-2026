@@ -2,6 +2,7 @@ import React from 'react';
 import { Sparkles, Heart, Shield, Lock } from 'lucide-react';
 import { SiteContent } from '../../types/site';
 import { AppView } from './Header';
+import { useAuth } from '../../context/AuthContext';
 
 interface FooterProps {
   siteContent: SiteContent;
@@ -16,6 +17,7 @@ export const Footer: React.FC<FooterProps> = ({
   onOpenLogin,
   isAdmin,
 }) => {
+  const { isSystemInitialized } = useAuth();
   return (
     <footer className="mt-auto border-t border-[#F1D4DF] bg-white/60 backdrop-blur-xs">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -60,6 +62,14 @@ export const Footer: React.FC<FooterProps> = ({
                 className="hover:text-[#D88CA3] transition-colors text-[#51434A] font-semibold"
               >
                 Admin Dashboard
+              </button>
+            ) : isSystemInitialized === false ? (
+              <button
+                onClick={() => onNavigate('admin-setup')}
+                className="hover:text-[#D88CA3] transition-colors flex items-center gap-1 text-[#D94C6D] font-semibold"
+              >
+                <Sparkles className="w-3 h-3 text-[#D94C6D]" />
+                <span>Thiết lập Admin</span>
               </button>
             ) : (
               <button

@@ -3,7 +3,7 @@ import { Sparkles, Shield, UserCheck, Menu, X, ShieldCheck, Lock } from 'lucide-
 import { useAuth } from '../../context/AuthContext';
 import { SiteContent } from '../../types/site';
 
-export type AppView = 'home' | 'library' | 'about' | 'admin' | 'admin-login';
+export type AppView = 'home' | 'library' | 'about' | 'admin' | 'admin-login' | 'admin-setup';
 
 interface HeaderProps {
   siteContent: SiteContent;
@@ -18,7 +18,7 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigate,
   onOpenLogin,
 }) => {
-  const { isAdmin, currentUser } = useAuth();
+  const { isAdmin, isSystemInitialized } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleNavClick = (view: AppView) => {
@@ -106,6 +106,18 @@ export const Header: React.FC<HeaderProps> = ({
               <UserCheck className="w-3.5 h-3.5 text-[#D88CA3]" />
               <span>Admin Dashboard</span>
             </button>
+          ) : isSystemInitialized === false ? (
+            <button
+              onClick={() => handleNavClick('admin-setup')}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-semibold transition-all shadow-xs ${
+                currentView === 'admin-setup'
+                  ? 'bg-[#E9A9BB] text-white border-[#E9A9BB]'
+                  : 'bg-[#FFF0F3] border-[#F2A4B8] text-[#D94C6D] hover:bg-[#FBE6ED]'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#D94C6D]" />
+              <span>Thiết lập Admin</span>
+            </button>
           ) : (
             <button
               onClick={() => handleNavClick('admin-login')}
@@ -130,6 +142,14 @@ export const Header: React.FC<HeaderProps> = ({
               title="Admin Dashboard"
             >
               <UserCheck className="w-4 h-4 text-[#D88CA3]" />
+            </button>
+          ) : isSystemInitialized === false ? (
+            <button
+              onClick={() => handleNavClick('admin-setup')}
+              className="p-2 rounded-full bg-[#FFF0F3] border border-[#F2A4B8] text-[#D94C6D] text-xs"
+              title="Thiết lập Admin"
+            >
+              <Sparkles className="w-4 h-4 text-[#D94C6D]" />
             </button>
           ) : (
             <button
@@ -182,14 +202,28 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={() => {
                 if (isAdmin) {
                   handleNavClick('admin');
+                } else if (isSystemInitialized === false) {
+                  handleNavClick('admin-setup');
                 } else {
                   handleNavClick('admin-login');
                 }
               }}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#F6DCE5] text-[#51434A] text-sm font-medium"
             >
-              {isAdmin ? <UserCheck className="w-4 h-4 text-[#D88CA3]" /> : <Lock className="w-4 h-4 text-[#D88CA3]" />}
-              <span>{isAdmin ? 'Open Admin Dashboard' : 'Dedicated Admin Login'}</span>
+              {isAdmin ? (
+                <UserCheck className="w-4 h-4 text-[#D88CA3]" />
+              ) : isSystemInitialized === false ? (
+                <Sparkles className="w-4 h-4 text-[#D94C6D]" />
+              ) : (
+                <Lock className="w-4 h-4 text-[#D88CA3]" />
+              )}
+              <span>
+                {isAdmin
+                  ? 'Admin Dashboard'
+                  : isSystemInitialized === false
+                  ? 'Thiết lập Admin Lần Đầu'
+                  : 'Đăng nhập Quản trị viên'}
+              </span>
             </button>
           </div>
         </div>

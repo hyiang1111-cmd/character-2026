@@ -65,6 +65,18 @@
         "addedAt": { "type": "number" }
       },
       "required": ["email", "role"]
+    },
+    "SystemStatus": {
+      "title": "SystemStatus",
+      "description": "System initialization and administrator first-time setup lock document.",
+      "type": "object",
+      "properties": {
+        "isInitialized": { "type": "boolean" },
+        "adminUid": { "type": "string", "maxLength": 128 },
+        "adminEmail": { "type": "string", "maxLength": 150 },
+        "initializedAt": { "type": "number" }
+      },
+      "required": ["isInitialized", "adminUid", "adminEmail"]
     }
   },
   "firestore": {
@@ -79,6 +91,10 @@
     "/admins/{adminId}": {
       "schema": "Admin",
       "description": "Collection of authorized administrator user documents."
+    },
+    "/system/{systemId}": {
+      "schema": "SystemStatus",
+      "description": "Collection containing global system initialization status."
     }
   }
 }

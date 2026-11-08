@@ -17,6 +17,7 @@ import { CharacterModal } from './components/public/CharacterModal';
 import { AboutSection } from './components/public/AboutSection';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AdminLogin } from './components/admin/AdminLogin';
+import { AdminSetup } from './components/admin/AdminSetup';
 import { isValidHttpsUrl } from './services/promptGenerator';
 import { Sparkles, BookOpen, Layers } from 'lucide-react';
 
@@ -27,7 +28,7 @@ function AppContent() {
   const getInitialView = (): AppView => {
     if (typeof window !== 'undefined' && window.location.hash) {
       const hash = window.location.hash.replace('#', '').trim() as AppView;
-      if (['home', 'library', 'about', 'admin', 'admin-login'].includes(hash)) {
+      if (['home', 'library', 'about', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
         return hash;
       }
     }
@@ -56,7 +57,7 @@ function AppContent() {
     const handleHashChange = () => {
       if (typeof window !== 'undefined' && window.location.hash) {
         const hash = window.location.hash.replace('#', '').trim() as AppView;
-        if (['home', 'library', 'about', 'admin', 'admin-login'].includes(hash)) {
+        if (['home', 'library', 'about', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
           setCurrentView(hash);
         }
       }
@@ -157,6 +158,61 @@ function AppContent() {
     return true;
   });
 
+  // Handle First-time Admin Setup view
+  if (currentView === 'admin-setup') {
+    if (isAdmin) {
+      return (
+        <>
+          <AdminDashboard
+            characters={characters}
+            siteContent={siteContent}
+            onRefreshData={refreshData}
+            onPreviewCharacter={(char) => setSelectedCharacterModal(char)}
+            onReturnToSite={() => navigateView('home')}
+            onShowToast={showToast}
+          />
+          <CharacterModal
+            character={selectedCharacterModal}
+            isOpen={Boolean(selectedCharacterModal)}
+            onClose={() => setSelectedCharacterModal(null)}
+            onStartChat={handleStartChat}
+            onViewChat={handleViewChat}
+            onShowToast={showToast}
+          />
+          <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+        </>
+      );
+    }
+
+    return (
+      <div className="min-h-screen bg-[#FFF5F7] flex flex-col">
+        <Header
+          siteContent={siteContent}
+          currentView={currentView}
+          onNavigate={navigateView}
+          onOpenLogin={() => setIsLoginOpen(true)}
+        />
+        <div className="flex-1 flex items-center justify-center p-4">
+          <AdminSetup
+            onSuccess={() => {
+              showToast('success', 'Thiết lập Admin hoàn tất', 'Tài khoản Quản trị viên tối cao đã được khởi tạo và chức năng thiết lập được khóa vĩnh viễn.');
+              navigateView('admin');
+            }}
+            onGoToLogin={() => navigateView('admin-login')}
+            onBackToSite={() => navigateView('library')}
+          />
+        </div>
+        <Footer
+          siteContent={siteContent}
+          onNavigate={navigateView}
+          onOpenLogin={() => setIsLoginOpen(true)}
+          isAdmin={isAdmin}
+        />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
   // Handle dedicated Admin Login view
   if (currentView === 'admin-login') {
     if (isAdmin) {
@@ -196,9 +252,10 @@ function AppContent() {
           <AdminLogin
             isPageMode={true}
             onSuccess={() => {
-              showToast('success', 'Admin Authenticated', 'Welcome to the Curator Dashboard.');
+              showToast('success', 'Admin Authenticated', 'Chào mừng Quản trị viên đến với Curator Dashboard.');
               navigateView('admin');
             }}
+            onGoToSetup={() => navigateView('admin-setup')}
             onBackToSite={() => navigateView('library')}
           />
         </div>
@@ -475,6 +532,10 @@ function AppContent() {
         onSuccess={() => {
           showToast('success', 'Admin Authenticated', 'Curator Dashboard is now unlocked.');
           navigateView('admin');
+        }}
+        onGoToSetup={() => {
+          setIsLoginOpen(false);
+          navigateView('admin-setup');
         }}
       />
 

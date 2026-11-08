@@ -7,10 +7,11 @@ import {
   Sparkles,
   ArrowLeft,
   KeyRound,
-  Mail,
-  CheckCircle,
   Globe,
-  Loader2
+  Loader2,
+  Eye,
+  EyeOff,
+  UserCheck
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -19,6 +20,7 @@ interface AdminLoginProps {
   isPageMode?: boolean;
   onClose?: () => void;
   onSuccess: () => void;
+  onGoToSetup?: () => void;
   onBackToSite?: () => void;
 }
 
@@ -27,109 +29,51 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
   isPageMode = false,
   onClose,
   onSuccess,
+  onGoToSetup,
   onBackToSite,
 }) => {
   const {
-    loginAsAdmin,
-    loginWithPassword,
-    setupAdminPassword,
-    resetAdminPassword,
+    loginWithEmailPassword,
+    loginWithGoogle,
+    isSystemInitialized,
     designatedAdminEmail,
     isAuthenticating,
     authError,
     clearAuthError,
   } = useAuth();
 
-  const [authMethod, setAuthMethod] = useState<'google' | 'password'>('password');
+  const [email, setEmail] = useState(designatedAdminEmail || '');
   const [password, setPassword] = useState('');
-  const [isSetupMode, setIsSetupMode] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [localSuccess, setLocalSuccess] = useState<string | null>(null);
-  const [popupBlocked, setPopupBlocked] = useState(false);
 
   if (!isOpen && !isPageMode) return null;
 
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'Current Domain';
 
-  const handleGoogleSignIn = async (e?: React.MouseEvent) => {
-    if (e) e.preventDefault();
-    setLocalError(null);
-    setLocalSuccess(null);
-    setPopupBlocked(false);
-    clearAuthError();
-
-    try {
-      await loginAsAdmin();
-      onSuccess();
-      if (onClose) onClose();
-    } catch (err: any) {
-      if (err?.code === 'auth/popup-blocked' || err?.message?.includes('popup')) {
-        setPopupBlocked(true);
-      }
-      const msg = err?.message || 'Google authentication failed.';
-      if (msg.includes('auth/unauthorized-domain')) {
-        setLocalError(
-          `Domain (${currentOrigin}) is not whitelisted in Firebase Console yet. Please use the Administrator Password login below to sign in directly on this domain.`
-        );
-        setAuthMethod('password');
-      } else {
-        setLocalError(msg);
-      }
-    }
-  };
-
   const handlePasswordSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLocalError(null);
-    setLocalSuccess(null);
     clearAuthError();
 
-    if (!password) {
-      setLocalError('Please enter your administrator password.');
+    if (!email.trim() || !password) {
+      setLocalError('Vui lòng nhập đầy đủ email và mật khẩu quản trị viên.');
       return;
     }
 
     try {
-      if (isSetupMode) {
-        if (password.length < 6) {
-          setLocalError('Password must be at least 6 characters.');
-          return;
-        }
-        await setupAdminPassword(password);
-        setLocalSuccess('Administrator account provisioned successfully.');
-      } else {
-        await loginWithPassword(password);
-      }
+      await loginWithEmailPassword(email.trim(), password);
       onSuccess();
       if (onClose) onClose();
     } catch (err: any) {
-      const msg = err?.message || 'Authentication failed. Please verify credentials.';
-      if (msg.includes('user-not-found') || msg.includes('INVALID_LOGIN_CREDENTIALS')) {
-        setLocalError(
-          'No password set for this account yet. Click "Setup Admin Password" below to set your initial password.'
-        );
-      } else {
-        setLocalError(msg);
-      }
-    }
-  };
-
-  const handlePasswordReset = async () => {
-    setLocalError(null);
-    setLocalSuccess(null);
-    clearAuthError();
-    try {
-      await resetAdminPassword();
-      setLocalSuccess(`Password reset email dispatched to ${designatedAdminEmail}. Check your inbox.`);
-    } catch (err: any) {
-      setLocalError(err?.message || 'Failed to send password reset email.');
+      setLocalError(err?.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.');
     }
   };
 
   const errorMessage = localError || authError;
 
   const content = (
-    <div className="relative w-full max-w-md bg-white rounded-3xl border border-[#F1D4DF] shadow-xl p-6 sm:p-8 z-10 mx-auto">
+    <div className="relative w-full max-w-md bg-white rounded-3xl border border-[#F1D4DF] shadow-xl p-6 sm:p-8 z-10 mx-auto animate-in fade-in">
       {onClose && !isPageMode && (
         <button
           onClick={onClose}
@@ -140,223 +84,166 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
         </button>
       )}
 
-      {/* Icon & Title */}
+      {/* Header */}
       <div className="text-center mb-6">
         <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#E9A9BB] to-[#F6DCE5] flex items-center justify-center mx-auto mb-3 shadow-xs">
           <Lock className="w-6 h-6 text-white" />
         </div>
         <h2 className="font-serif-title text-2xl sm:text-3xl font-bold text-[#51434A]">
-          Curator Portal
+          Đăng Nhập Quản Trị Viên
         </h2>
         <p className="text-xs text-[#8E7A84] mt-1">
-          Pink Character Archive Administrator Login
+          Pink Character Archive Curator Portal
         </p>
       </div>
 
-      {/* Feedback Messages */}
-      {errorMessage && (
-        <div className="mb-5 p-3.5 rounded-2xl bg-[#FFF0F3] border border-[#F2A4B8] flex items-start gap-2.5 text-xs text-[#7A2E3D]">
-          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#D94C6D]" />
-          <div className="flex-1 leading-relaxed">
-            {errorMessage}
-            {popupBlocked && (
-              <p className="mt-2 font-medium text-xs">
-                Tip: Your browser blocked the Google popup window. You can sign in directly using the Administrator Password tab below.
-              </p>
-            )}
+      {/* First-time setup notice if system is not yet initialized */}
+      {isSystemInitialized === false && onGoToSetup && (
+        <div className="mb-5 p-4 rounded-2xl bg-[#FFF0F3] border border-[#F2A4B8] text-xs text-[#7A2E3D] space-y-2">
+          <div className="flex items-center gap-1.5 font-bold">
+            <Sparkles className="w-4 h-4 text-[#D94C6D]" />
+            <span>Hệ thống chưa thiết lập Admin</span>
           </div>
+          <p className="leading-relaxed">
+            Hệ thống chưa có tài khoản Quản trị viên nào. Hãy thiết lập mật khẩu lần đầu ngay bây giờ.
+          </p>
+          <button
+            type="button"
+            onClick={onGoToSetup}
+            className="w-full py-2 px-3 rounded-xl bg-[#D94C6D] hover:bg-[#C23B5A] text-white text-xs font-bold transition-all shadow-xs"
+          >
+            Chuyển đến Thiết Lập Admin Lần Đầu
+          </button>
         </div>
       )}
 
-      {localSuccess && (
-        <div className="mb-5 p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-start gap-2.5 text-xs text-emerald-800">
-          <CheckCircle className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
-          <div className="flex-1 leading-relaxed">{localSuccess}</div>
+      {/* Error Banner */}
+      {errorMessage && (
+        <div className="mb-5 p-4 rounded-2xl bg-[#FFF0F3] border border-[#F2A4B8] space-y-2.5 text-xs text-[#7A2E3D]">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#D94C6D]" />
+            <div className="flex-1 leading-relaxed">{errorMessage}</div>
+          </div>
+          {(errorMessage.includes('Firebase Console') || errorMessage.includes('Sign-in method')) && (
+            <a
+              href="https://console.firebase.google.com/project/gen-lang-client-0190630234/authentication/providers"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#D94C6D] text-white font-semibold text-[11px] hover:bg-[#C23B5A] transition-colors"
+            >
+              <span>Mở Firebase Console (Sign-in method)</span>
+            </a>
+          )}
         </div>
       )}
 
-      {/* Security Notice & Origin Guarantee */}
-      <div className="mb-5 p-3.5 rounded-2xl bg-[#FFF5F7] border border-[#F1D4DF] text-xs text-[#6E5C65] space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 font-semibold text-[#51434A]">
+      {/* Domain & Security Status */}
+      <div className="mb-5 p-3 rounded-2xl bg-[#FFF5F7] border border-[#F1D4DF] text-[11px] text-[#6E5C65] space-y-1.5">
+        <div className="flex items-center justify-between font-semibold text-[#51434A]">
+          <div className="flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Designated Administrator</span>
+            <span>Xác thực nội bộ (In-App)</span>
           </div>
           <div className="flex items-center gap-1 text-[10px] text-[#8E7A84]">
             <Globe className="w-3 h-3 text-[#D88CA3]" />
-            <span className="truncate max-w-[140px]" title={currentOrigin}>{currentOrigin}</span>
+            <span className="truncate max-w-[130px]" title={currentOrigin}>{currentOrigin}</span>
           </div>
         </div>
-        <div className="pt-1.5 border-t border-[#F1D4DF]/80 text-[11px] flex items-center justify-between">
-          <span className="text-[#8E7A84]">Authorized Email:</span>
-          <strong className="font-mono text-[#51434A] bg-white px-2 py-0.5 rounded border border-[#F1D4DF]">
-            {designatedAdminEmail}
-          </strong>
+        <p className="text-[10px] text-[#8E7A84]">
+          Duy trì phiên đăng nhập an toàn trực tiếp trên tên miền Vercel hiện tại, không chuyển hướng bên ngoài.
+        </p>
+      </div>
+
+      {/* Login Form */}
+      <form onSubmit={handlePasswordSignIn} className="space-y-4">
+        <div>
+          <label className="block text-[11px] font-semibold text-[#51434A] uppercase tracking-wider mb-1.5">
+            Email Quản trị viên
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            placeholder="admin@example.com"
+            autoComplete="username"
+            className="w-full px-4 py-2.5 rounded-xl bg-white border border-[#F1D4DF] focus:border-[#E9A9BB] focus:ring-2 focus:ring-[#E9A9BB]/30 focus:outline-none text-xs text-[#51434A] font-mono"
+          />
         </div>
-      </div>
 
-      {/* Method Tabs */}
-      <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#FFF5F7] rounded-2xl border border-[#F1D4DF] mb-5">
-        <button
-          type="button"
-          onClick={() => {
-            setAuthMethod('password');
-            setLocalError(null);
-          }}
-          className={`py-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
-            authMethod === 'password'
-              ? 'bg-white text-[#51434A] shadow-xs border border-[#F1D4DF]'
-              : 'text-[#8E7A84] hover:text-[#51434A]'
-          }`}
-        >
-          <KeyRound className="w-3.5 h-3.5 text-[#D88CA3]" />
-          <span>Admin Password</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setAuthMethod('google');
-            setLocalError(null);
-          }}
-          className={`py-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 ${
-            authMethod === 'google'
-              ? 'bg-white text-[#51434A] shadow-xs border border-[#F1D4DF]'
-              : 'text-[#8E7A84] hover:text-[#51434A]'
-          }`}
-        >
-          <Mail className="w-3.5 h-3.5 text-[#4285F4]" />
-          <span>Google Sign-In</span>
-        </button>
-      </div>
-
-      {/* Option 1: Direct Password Form */}
-      {authMethod === 'password' && (
-        <form onSubmit={handlePasswordSignIn} className="space-y-4">
-          <div>
-            <label className="block text-[11px] font-semibold text-[#51434A] uppercase tracking-wider mb-1.5">
-              Account Email
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-[11px] font-semibold text-[#51434A] uppercase tracking-wider">
+              Mật khẩu
             </label>
-            <input
-              type="email"
-              value={designatedAdminEmail}
-              readOnly
-              className="w-full px-4 py-2.5 rounded-xl bg-[#FFF5F7]/80 border border-[#F1D4DF] text-xs text-[#51434A] font-mono select-all cursor-not-allowed"
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] font-semibold text-[#51434A] uppercase tracking-wider">
-                {isSetupMode ? 'Create New Admin Password' : 'Password'}
-              </label>
-              {!isSetupMode && (
-                <button
-                  type="button"
-                  onClick={handlePasswordReset}
-                  className="text-[11px] text-[#D88CA3] hover:underline"
-                >
-                  Forgot password?
-                </button>
-              )}
-            </div>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={isSetupMode ? 'Choose a secure password (min 6 chars)' : 'Enter admin password'}
-              autoComplete="current-password"
-              className="w-full px-4 py-2.5 rounded-xl bg-white border border-[#E9A9BB] focus:ring-2 focus:ring-[#E9A9BB]/40 focus:outline-none text-xs text-[#51434A]"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={isAuthenticating}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] hover:opacity-95 text-white text-xs font-bold shadow-xs active:scale-98 transition-all disabled:opacity-50"
-          >
-            {isAuthenticating ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Verifying Credentials...</span>
-              </>
-            ) : (
-              <>
-                <Lock className="w-4 h-4" />
-                <span>{isSetupMode ? 'Create Password & Enter Dashboard' : 'Sign In to Curator Portal'}</span>
-              </>
-            )}
-          </button>
-
-          <div className="text-center pt-1">
             <button
               type="button"
-              onClick={() => {
-                setIsSetupMode(!isSetupMode);
-                setLocalError(null);
-                setLocalSuccess(null);
-              }}
-              className="text-[11px] text-[#8E7A84] hover:text-[#51434A] underline"
+              onClick={() => setShowPassword(!showPassword)}
+              className="text-[11px] text-[#8E7A84] hover:text-[#51434A] flex items-center gap-1"
             >
-              {isSetupMode
-                ? 'Already configured? Switch to standard login'
-                : 'First time signing in? Set up administrator password'}
+              {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              <span>{showPassword ? 'Ẩn' : 'Hiện'}</span>
             </button>
           </div>
-        </form>
-      )}
+          <input
+            type={showPassword ? 'text' : 'password'}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            placeholder="Nhập mật khẩu quản trị viên"
+            autoComplete="current-password"
+            className="w-full px-4 py-2.5 rounded-xl bg-white border border-[#E9A9BB] focus:border-[#E9A9BB] focus:ring-2 focus:ring-[#E9A9BB]/30 focus:outline-none text-xs text-[#51434A]"
+          />
+        </div>
 
-      {/* Option 2: Google Authentication Button */}
-      {authMethod === 'google' && (
-        <div className="space-y-4">
-          <p className="text-xs text-[#6E5C65] leading-relaxed">
-            Authenticates directly in a popup window using Google. Only <strong>{designatedAdminEmail}</strong> is authorized for curator access.
-          </p>
+        <button
+          type="submit"
+          disabled={isAuthenticating}
+          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white text-xs font-bold shadow-xs hover:opacity-95 active:scale-98 transition-all disabled:opacity-50"
+        >
+          {isAuthenticating ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Đang kiểm tra quyền Admin...</span>
+            </>
+          ) : (
+            <>
+              <Lock className="w-4 h-4" />
+              <span>Đăng Nhập Quản Trị Viên</span>
+            </>
+          )}
+        </button>
+      </form>
 
+      {/* First-time setup link if not yet initialized */}
+      {isSystemInitialized === false && onGoToSetup && (
+        <div className="text-center pt-3 border-t border-[#F1D4DF]/80">
           <button
             type="button"
-            onClick={handleGoogleSignIn}
-            disabled={isAuthenticating}
-            className="w-full flex items-center justify-center gap-3 px-5 py-3.5 rounded-2xl bg-white border border-[#E9A9BB] hover:bg-[#FFF5F7] text-[#51434A] text-xs font-bold shadow-xs active:scale-98 transition-all disabled:opacity-50"
+            onClick={onGoToSetup}
+            className="text-xs text-[#D88CA3] hover:underline font-semibold"
           >
-            <svg className="w-4 h-4" viewBox="0 0 24 24">
-              <path
-                fill="#4285F4"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-              />
-            </svg>
-            <span>{isAuthenticating ? 'Authenticating with Google...' : 'Sign in with Google Popup'}</span>
+            Chưa có mật khẩu? Thiết lập Admin lần đầu
           </button>
         </div>
       )}
 
-      {/* Back button */}
+      {/* Return to Library */}
       {onBackToSite && (
-        <div className="pt-4 mt-4 border-t border-[#F1D4DF]/60">
+        <div className="pt-3 border-t border-[#F1D4DF]/60 mt-4">
           <button
             type="button"
             onClick={onBackToSite}
             className="w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-2xl bg-[#FFF5F7] border border-[#F1D4DF] text-xs font-medium text-[#6E5C65] hover:bg-[#FBE6ED] transition-colors"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Return to Public Library</span>
+            <span>Quay lại Thư viện</span>
           </button>
         </div>
       )}
 
-      <p className="text-[11px] text-[#8E7A84] text-center mt-4">
-        Strict In-App Authentication: No external redirects. Public visitors receive read-only access.
+      <p className="text-[10px] text-[#8E7A84] text-center mt-3">
+        Quyền quản trị được bảo vệ bằng Firestore Security Rules. Khách truy cập có quyền xem các nhân vật đã xuất bản.
       </p>
     </div>
   );
