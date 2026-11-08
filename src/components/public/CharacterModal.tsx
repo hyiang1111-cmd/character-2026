@@ -107,9 +107,9 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
           <div className="flex flex-col sm:flex-row gap-6 bg-white p-5 rounded-2xl border border-[#F1D4DF] shadow-xs">
             {/* Portrait */}
             <div className="w-full sm:w-44 h-56 sm:h-56 shrink-0 rounded-2xl overflow-hidden bg-[#FBE6ED] border border-[#F1D4DF] relative">
-              {character.portraitUrl ? (
+              {character.avatarUrl || character.portraitUrl ? (
                 <img
-                  src={character.portraitUrl}
+                  src={character.avatarUrl || character.portraitUrl}
                   alt={character.name}
                   className="w-full h-full object-cover object-top"
                 />
@@ -128,15 +128,23 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
             {/* Basic Info & Summary */}
             <div className="flex-1 flex flex-col justify-between">
               <div>
-                <h2 className="font-serif-title text-3xl font-bold text-[#51434A] mb-1">
-                  {character.name}
-                </h2>
-                {character.fullName && (
-                  <p className="text-xs text-[#8E7A84] mb-3">Full Identity: {character.fullName}</p>
-                )}
+                <div className="flex items-baseline gap-2 mb-1">
+                  <h2 className="font-serif-title text-3xl font-bold text-[#51434A]">
+                    {character.name}
+                  </h2>
+                  {character.nickname && (
+                    <span className="text-sm text-[#8E7A84] italic">"{character.nickname}"</span>
+                  )}
+                </div>
 
                 {/* Badges matrix */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs mb-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs mb-3">
+                  {character.species && (
+                    <div className="p-2 rounded-xl bg-[#FFF5F7] border border-[#F1D4DF]">
+                      <span className="text-[10px] text-[#8E7A84] block font-medium">SPECIES</span>
+                      <span className="font-semibold text-[#51434A] truncate block">{character.species}</span>
+                    </div>
+                  )}
                   {character.age && (
                     <div className="p-2 rounded-xl bg-[#FFF5F7] border border-[#F1D4DF]">
                       <span className="text-[10px] text-[#8E7A84] block font-medium">AGE</span>
@@ -149,30 +157,32 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
                       <span className="font-semibold text-[#51434A]">{character.gender}</span>
                     </div>
                   )}
-                  {character.nationality && (
-                    <div className="p-2 rounded-xl bg-[#FFF5F7] border border-[#F1D4DF]">
-                      <span className="text-[10px] text-[#8E7A84] block font-medium">ORIGIN</span>
-                      <span className="font-semibold text-[#51434A]">{character.nationality}</span>
-                    </div>
-                  )}
                   {character.occupation && (
                     <div className="p-2 rounded-xl bg-[#FFF5F7] border border-[#F1D4DF]">
                       <span className="text-[10px] text-[#8E7A84] block font-medium">OCCUPATION</span>
-                      <span className="font-semibold text-[#51434A]">{character.occupation}</span>
+                      <span className="font-semibold text-[#51434A] truncate block">{character.occupation}</span>
                     </div>
                   )}
-                  {character.universe && (
-                    <div className="p-2 rounded-xl bg-[#FFF5F7] border border-[#F1D4DF] col-span-2">
-                      <span className="text-[10px] text-[#8E7A84] block font-medium">UNIVERSE / FANDOM</span>
-                      <span className="font-semibold text-[#51434A]">{character.universe}</span>
+                  {character.category && (
+                    <div className="p-2 rounded-xl bg-[#FFF5F7] border border-[#F1D4DF]">
+                      <span className="text-[10px] text-[#8E7A84] block font-medium">CATEGORY</span>
+                      <span className="font-semibold text-[#51434A] truncate block">{character.category}</span>
                     </div>
                   )}
                 </div>
 
-                {character.shortDescription && (
-                  <p className="text-xs sm:text-sm text-[#6E5C65] leading-relaxed italic border-l-2 border-[#E9A9BB] pl-3 py-0.5">
-                    "{character.shortDescription}"
-                  </p>
+                {/* Tags in modal */}
+                {character.tags && character.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {character.tags.map((t) => (
+                      <span
+                        key={t}
+                        className="px-2.5 py-0.5 rounded-full bg-[#FBE6ED] text-[10px] text-[#51434A] border border-[#E9A9BB]/40 font-medium"
+                      >
+                        #{t}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
@@ -333,25 +343,25 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
           {/* Tab 2: Roleplay Directives */}
           {activeTab === 'roleplay' && (
             <div className="space-y-4 text-xs sm:text-sm">
-              {character.initialGreeting && (
+              {(character.greeting || character.initialGreeting) && (
                 <div className="bg-white p-4 rounded-2xl border border-[#E9A9BB]/60 bg-gradient-to-r from-white to-[#FBE6ED]/40">
                   <h4 className="font-semibold text-xs text-[#D88CA3] uppercase tracking-wider mb-2 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>Initial Greeting Message</span>
+                    <span>Greeting Message</span>
                   </h4>
                   <p className="text-[#51434A] font-medium italic text-sm leading-relaxed">
-                    "{character.initialGreeting}"
+                    "{character.greeting || character.initialGreeting}"
                   </p>
                 </div>
               )}
 
-              {character.roleplayScenario && (
+              {(character.scenario || character.roleplayScenario) && (
                 <div className="bg-white p-4 rounded-2xl border border-[#F1D4DF]">
                   <h4 className="font-semibold text-xs text-[#8E7A84] uppercase tracking-wider mb-2">
                     Current Scenario / Setting
                   </h4>
                   <p className="text-[#51434A] leading-relaxed whitespace-pre-line font-light">
-                    {character.roleplayScenario}
+                    {character.scenario || character.roleplayScenario}
                   </p>
                 </div>
               )}

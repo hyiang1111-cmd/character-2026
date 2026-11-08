@@ -1,10 +1,11 @@
 import React from 'react';
-import { Sparkles, Heart, Shield } from 'lucide-react';
+import { Sparkles, Heart, Shield, Lock } from 'lucide-react';
 import { SiteContent } from '../../types/site';
+import { AppView } from './Header';
 
 interface FooterProps {
   siteContent: SiteContent;
-  onNavigate: (view: 'home' | 'library' | 'about' | 'admin') => void;
+  onNavigate: (view: AppView) => void;
   onOpenLogin: () => void;
   isAdmin: boolean;
 }
@@ -62,10 +63,10 @@ export const Footer: React.FC<FooterProps> = ({
               </button>
             ) : (
               <button
-                onClick={onOpenLogin}
+                onClick={() => onNavigate('admin-login')}
                 className="hover:text-[#D88CA3] transition-colors flex items-center gap-1"
               >
-                <Shield className="w-3 h-3 text-[#D88CA3]" />
+                <Lock className="w-3 h-3 text-[#D88CA3]" />
                 <span>Admin Login</span>
               </button>
             )}

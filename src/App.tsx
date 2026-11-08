@@ -7,7 +7,7 @@ import {
   getSiteContent,
   subscribeToCharacters
 } from './services/storage';
-import { Header } from './components/common/Header';
+import { Header, AppView } from './components/common/Header';
 import { Footer } from './components/common/Footer';
 import { EmptyState } from './components/common/EmptyState';
 import { ToastContainer, ToastMessage } from './components/common/Toast';
@@ -26,7 +26,7 @@ function AppContent() {
   // State
   const [characters, setCharacters] = useState<Character[]>([]);
   const [siteContent, setSiteContent] = useState<SiteContent>(DEFAULT_SITE_CONTENT);
-  const [currentView, setCurrentView] = useState<'home' | 'library' | 'about' | 'admin'>('home');
+  const [currentView, setCurrentView] = useState<AppView>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedCharacterModal, setSelectedCharacterModal] = useState<Character | null>(null);
@@ -126,6 +126,62 @@ function AppContent() {
     return true;
   });
 
+  // Handle dedicated Admin Login view
+  if (currentView === 'admin-login') {
+    if (isAdmin) {
+      // Auto-redirect authenticated admin to the dashboard
+      return (
+        <>
+          <AdminDashboard
+            characters={characters}
+            siteContent={siteContent}
+            onRefreshData={refreshData}
+            onPreviewCharacter={(char) => setSelectedCharacterModal(char)}
+            onReturnToSite={() => setCurrentView('home')}
+            onShowToast={showToast}
+          />
+          <CharacterModal
+            character={selectedCharacterModal}
+            isOpen={Boolean(selectedCharacterModal)}
+            onClose={() => setSelectedCharacterModal(null)}
+            onStartChat={handleStartChat}
+            onViewChat={handleViewChat}
+            onShowToast={showToast}
+          />
+          <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+        </>
+      );
+    }
+
+    return (
+      <div className="min-h-screen bg-[#FFF5F7] flex flex-col">
+        <Header
+          siteContent={siteContent}
+          currentView={currentView}
+          onNavigate={setCurrentView}
+          onOpenLogin={() => setIsLoginOpen(true)}
+        />
+        <div className="flex-1 flex items-center justify-center p-4">
+          <AdminLogin
+            isPageMode={true}
+            onSuccess={() => {
+              showToast('success', 'Admin Authenticated', 'Welcome to the Curator Dashboard.');
+              setCurrentView('admin');
+            }}
+            onBackToSite={() => setCurrentView('library')}
+          />
+        </div>
+        <Footer
+          siteContent={siteContent}
+          onNavigate={setCurrentView}
+          onOpenLogin={() => setIsLoginOpen(true)}
+          isAdmin={isAdmin}
+        />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </div>
+    );
+  }
+
   // Handle Admin view protection
   if (currentView === 'admin') {
     if (!isAdmin) {
@@ -150,7 +206,7 @@ function AppContent() {
               </p>
               <div className="flex flex-col gap-2 pt-2">
                 <button
-                  onClick={() => setIsLoginOpen(true)}
+                  onClick={() => setCurrentView('admin-login')}
                   className="w-full py-2.5 rounded-full bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white text-xs font-bold shadow-xs active:scale-95 transition-all"
                 >
                   Sign In to Admin

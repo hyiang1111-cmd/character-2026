@@ -17,7 +17,10 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSignedIn() && (
-        (request.auth.token.email_verified == true && request.auth.token.email.lower() == 'giangbjyx2026@gmail.com') ||
+        (request.auth.token.email != null && (
+          request.auth.token.email == 'giangbjyx2026@gmail.com' ||
+          request.auth.token.email.matches('(?i)^giangbjyx2026@gmail\\.com$')
+        )) ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
@@ -38,14 +41,14 @@ service cloud.firestore {
         isValidId(characterId) &&
         request.resource.data.name is string &&
         request.resource.data.name.size() > 0 &&
-        request.resource.data.name.size() <= 100 &&
+        request.resource.data.name.size() <= 200 &&
         (request.resource.data.status == 'published' || request.resource.data.status == 'draft');
 
       allow update: if isAdmin() &&
         isValidId(characterId) &&
         request.resource.data.name is string &&
         request.resource.data.name.size() > 0 &&
-        request.resource.data.name.size() <= 100 &&
+        request.resource.data.name.size() <= 200 &&
         (request.resource.data.status == 'published' || request.resource.data.status == 'draft');
 
       allow delete: if isAdmin() && isValidId(characterId);
@@ -59,11 +62,15 @@ service cloud.firestore {
     }
 
     // Admins Collection
-    // Tracks authorized administrator UIDs
     match /admins/{adminId} {
       allow get: if isSignedIn() && (request.auth.uid == adminId || isAdmin());
       allow list: if isAdmin();
       allow create, update, delete: if isAdmin() && isValidId(adminId);
+    }
+
+    // Connection Health Test Path
+    match /test/{testId} {
+      allow get, list: if true;
     }
   }
 }

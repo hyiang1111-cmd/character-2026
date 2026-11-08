@@ -3,10 +3,12 @@ import { Sparkles, Shield, UserCheck, Menu, X, ShieldCheck, Lock } from 'lucide-
 import { useAuth } from '../../context/AuthContext';
 import { SiteContent } from '../../types/site';
 
+export type AppView = 'home' | 'library' | 'about' | 'admin' | 'admin-login';
+
 interface HeaderProps {
   siteContent: SiteContent;
-  currentView: 'home' | 'library' | 'about' | 'admin';
-  onNavigate: (view: 'home' | 'library' | 'about' | 'admin') => void;
+  currentView: AppView;
+  onNavigate: (view: AppView) => void;
   onOpenLogin: () => void;
 }
 
@@ -19,7 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   const { isAdmin, currentUser } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const handleNavClick = (view: 'home' | 'library' | 'about' | 'admin') => {
+  const handleNavClick = (view: AppView) => {
     onNavigate(view);
     setMobileMenuOpen(false);
   };
@@ -79,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </nav>
 
-        {/* Right side: Security badge & Admin access button */}
+        {/* Right side: Security badge & Dedicated Admin Entry */}
         <div className="hidden sm:flex items-center gap-2.5">
           {/* Security status badge */}
           <div
@@ -95,15 +97,23 @@ export const Header: React.FC<HeaderProps> = ({
           {isAdmin ? (
             <button
               onClick={() => handleNavClick('admin')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white border border-[#E9A9BB] text-[#51434A] text-xs font-semibold hover:bg-[#FBE6ED] transition-all shadow-xs"
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-semibold transition-all shadow-xs ${
+                currentView === 'admin'
+                  ? 'bg-[#E9A9BB] text-white border-[#E9A9BB]'
+                  : 'bg-white border-[#E9A9BB] text-[#51434A] hover:bg-[#FBE6ED]'
+              }`}
             >
               <UserCheck className="w-3.5 h-3.5 text-[#D88CA3]" />
               <span>Admin Dashboard</span>
             </button>
           ) : (
             <button
-              onClick={onOpenLogin}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/90 border border-[#F1D4DF] text-[#6E5C65] text-xs font-medium hover:text-[#51434A] hover:border-[#E9A9BB] transition-all shadow-xs"
+              onClick={() => handleNavClick('admin-login')}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-medium transition-all shadow-xs ${
+                currentView === 'admin-login'
+                  ? 'bg-[#E9A9BB] text-white border-[#E9A9BB]'
+                  : 'bg-white/90 border-[#F1D4DF] text-[#6E5C65] hover:text-[#51434A] hover:border-[#E9A9BB]'
+              }`}
             >
               <Lock className="w-3.5 h-3.5 text-[#D88CA3]" />
               <span>Admin Login</span>
@@ -123,7 +133,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           ) : (
             <button
-              onClick={onOpenLogin}
+              onClick={() => handleNavClick('admin-login')}
               className="p-2 rounded-full bg-white border border-[#F1D4DF] text-[#6E5C65] text-xs"
               title="Admin Login"
             >
@@ -173,14 +183,13 @@ export const Header: React.FC<HeaderProps> = ({
                 if (isAdmin) {
                   handleNavClick('admin');
                 } else {
-                  setMobileMenuOpen(false);
-                  onOpenLogin();
+                  handleNavClick('admin-login');
                 }
               }}
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#F6DCE5] text-[#51434A] text-sm font-medium"
             >
               {isAdmin ? <UserCheck className="w-4 h-4 text-[#D88CA3]" /> : <Lock className="w-4 h-4 text-[#D88CA3]" />}
-              <span>{isAdmin ? 'Open Admin Dashboard' : 'Admin Login'}</span>
+              <span>{isAdmin ? 'Open Admin Dashboard' : 'Dedicated Admin Login'}</span>
             </button>
           </div>
         </div>

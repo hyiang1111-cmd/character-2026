@@ -13,7 +13,9 @@ import {
   Filter,
   Check,
   User,
-  Plus
+  Plus,
+  Files,
+  Tag
 } from 'lucide-react';
 import { Character } from '../../types/character';
 import { isValidHttpsUrl } from '../../services/promptGenerator';
@@ -22,6 +24,7 @@ interface CharacterListProps {
   characters: Character[];
   onAddNew: () => void;
   onEdit: (character: Character) => void;
+  onDuplicate: (character: Character) => void;
   onDelete: (id: string, name: string) => void;
   onTogglePublish: (character: Character) => void;
   onPreview: (character: Character) => void;
@@ -33,6 +36,7 @@ export const CharacterList: React.FC<CharacterListProps> = ({
   characters,
   onAddNew,
   onEdit,
+  onDuplicate,
   onDelete,
   onTogglePublish,
   onPreview,
@@ -56,10 +60,14 @@ export const CharacterList: React.FC<CharacterListProps> = ({
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       const matchName = char.name.toLowerCase().includes(q);
-      const matchFull = (char.fullName || '').toLowerCase().includes(q);
-      const matchUni = (char.universe || '').toLowerCase().includes(q);
-      const matchDesc = (char.shortDescription || '').toLowerCase().includes(q);
-      if (!matchName && !matchFull && !matchUni && !matchDesc) return false;
+      const matchNick = (char.nickname || '').toLowerCase().includes(q);
+      const matchSpecies = (char.species || '').toLowerCase().includes(q);
+      const matchOcc = (char.occupation || '').toLowerCase().includes(q);
+      const matchPersonality = (char.personality || '').toLowerCase().includes(q);
+      const matchTags = (char.tags || []).some((t) => t.toLowerCase().includes(q));
+      if (!matchName && !matchNick && !matchSpecies && !matchOcc && !matchPersonality && !matchTags) {
+        return false;
+      }
     }
 
     return true;
@@ -86,7 +94,7 @@ export const CharacterList: React.FC<CharacterListProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search characters by name, universe, or notes..."
+            placeholder="Search by name, nickname, species, tags, or personality..."
             className="w-full pl-10 pr-4 py-2 rounded-xl bg-[#FFF5F7] border border-[#F1D4DF] text-xs text-[#51434A] focus:outline-none focus:border-[#E9A9BB] focus:bg-white transition-all"
           />
         </div>
@@ -136,7 +144,7 @@ export const CharacterList: React.FC<CharacterListProps> = ({
         </div>
       </div>
 
-      {/* Characters List or Empty */}
+      {/* Characters List or Empty State */}
       {filtered.length === 0 ? (
         <div className="bg-white rounded-3xl border border-[#F1D4DF] p-12 text-center max-w-lg mx-auto">
           <div className="w-16 h-16 rounded-full bg-[#FFF5F7] border border-[#E9A9BB]/40 flex items-center justify-center mx-auto mb-4">
@@ -163,6 +171,7 @@ export const CharacterList: React.FC<CharacterListProps> = ({
       ) : (
         <div className="space-y-4">
           {filtered.map((char) => {
+            const avatar = char.avatarUrl || char.portraitUrl;
             const hasChatUrl = Boolean(char.chatUrl && isValidHttpsUrl(char.chatUrl));
             const hasViewerLink = Boolean(char.viewerLink && isValidHttpsUrl(char.viewerLink));
 
@@ -174,9 +183,9 @@ export const CharacterList: React.FC<CharacterListProps> = ({
                 {/* Character preview & info */}
                 <div className="flex items-center gap-4 flex-1 min-w-0">
                   <div className="w-16 h-16 rounded-xl overflow-hidden bg-[#FBE6ED] border border-[#F1D4DF] shrink-0 relative flex items-center justify-center">
-                    {char.portraitUrl ? (
+                    {avatar ? (
                       <img
-                        src={char.portraitUrl}
+                        src={avatar}
                         alt={char.name}
                         className="w-full h-full object-cover object-top"
                       />
@@ -192,6 +201,9 @@ export const CharacterList: React.FC<CharacterListProps> = ({
                       <h4 className="font-serif-title text-xl font-bold text-[#51434A] truncate">
                         {char.name}
                       </h4>
+                      {char.nickname && (
+                        <span className="text-xs text-[#8E7A84] italic">"{char.nickname}"</span>
+                      )}
                       {char.category && (
                         <span className="px-2 py-0.5 rounded-full bg-[#FFF5F7] border border-[#F1D4DF] text-[10px] font-semibold text-[#51434A]">
                           {char.category}
@@ -211,10 +223,25 @@ export const CharacterList: React.FC<CharacterListProps> = ({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-[#8E7A84]">
-                      {char.universe && <span>Universe: {char.universe}</span>}
-                      {char.age && <span>Age: {char.age}</span>}
-                      {char.gender && <span>Gender: {char.gender}</span>}
+                      {char.species && <span>Species: <strong className="text-[#51434A] font-medium">{char.species}</strong></span>}
+                      {char.age && <span>Age: <strong className="text-[#51434A] font-medium">{char.age}</strong></span>}
+                      {char.gender && <span>Gender: <strong className="text-[#51434A] font-medium">{char.gender}</strong></span>}
+                      {char.occupation && <span>Occupation: <strong className="text-[#51434A] font-medium">{char.occupation}</strong></span>}
                     </div>
+
+                    {/* Tags */}
+                    {char.tags && char.tags.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        {char.tags.map((t) => (
+                          <span
+                            key={t}
+                            className="px-2 py-0.5 rounded-md bg-[#FFF5F7] border border-[#F1D4DF] text-[10px] text-[#8E7A84]"
+                          >
+                            #{t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Links status badges */}
                     <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -247,20 +274,9 @@ export const CharacterList: React.FC<CharacterListProps> = ({
                     <button
                       onClick={() => window.open(char.chatUrl, '_blank', 'noopener,noreferrer')}
                       className="p-2 rounded-xl bg-white border border-[#E9A9BB] hover:bg-[#FFF5F7] text-[#51434A] transition-colors"
-                      title="Open Google AI Studio conversation link"
+                      title="Test Google AI Studio conversation link"
                     >
                       <MessageSquare className="w-4 h-4 text-[#D88CA3]" />
-                    </button>
-                  )}
-
-                  {/* Copy Viewer Link if available */}
-                  {hasViewerLink && (
-                    <button
-                      onClick={() => handleCopyViewerLink(char.viewerLink)}
-                      className="p-2 rounded-xl bg-white border border-[#F1D4DF] hover:bg-[#FFF5F7] text-[#6E5C65] transition-colors"
-                      title="Copy Public Viewer Link"
-                    >
-                      <Copy className="w-4 h-4 text-[#D88CA3]" />
                     </button>
                   )}
 
@@ -271,6 +287,15 @@ export const CharacterList: React.FC<CharacterListProps> = ({
                     title="Preview public profile"
                   >
                     <Eye className="w-4 h-4" />
+                  </button>
+
+                  {/* Duplicate Button */}
+                  <button
+                    onClick={() => onDuplicate(char)}
+                    className="p-2 rounded-xl bg-white border border-[#F1D4DF] hover:bg-[#FBE6ED] text-[#6E5C65] hover:text-[#51434A] transition-colors"
+                    title="Duplicate character as draft"
+                  >
+                    <Files className="w-4 h-4 text-[#D88CA3]" />
                   </button>
 
                   {/* Edit Button */}

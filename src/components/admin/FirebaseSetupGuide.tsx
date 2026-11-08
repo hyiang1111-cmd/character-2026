@@ -161,6 +161,39 @@ export const FirebaseSetupGuide: React.FC<FirebaseSetupGuideProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Vercel & External Domain Configuration */}
+        <div className="pt-4 border-t border-[#F1D4DF] space-y-3">
+          <div className="flex items-center gap-2 font-bold text-[#51434A] text-xs">
+            <ExternalLink className="w-4 h-4 text-[#D88CA3]" />
+            <span>Vercel Deployment & OAuth Authorized Domains</span>
+          </div>
+          <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-xs text-amber-900 space-y-2">
+            <p className="leading-relaxed">
+              When deploying this website to <strong>Vercel</strong> or custom domains, Google Authentication requires adding the domain to Firebase:
+            </p>
+            <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px] text-amber-800">
+              <li>Open your Firebase Console: <a href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/authentication/settings`} target="_blank" rel="noopener noreferrer" className="underline font-bold text-amber-900">Firebase Console Settings</a></li>
+              <li>Navigate to <strong>Authentication &gt; Settings &gt; Authorized Domains</strong>.</li>
+              <li>Click <strong>Add domain</strong> and paste your Vercel deployment URL (e.g. <code>your-app.vercel.app</code>).</li>
+            </ol>
+            <div className="pt-2 text-[11px] flex items-center justify-between border-t border-amber-200/60">
+              <span>Current Browser Origin: <strong>{typeof window !== 'undefined' ? window.location.host : 'localhost:3000'}</strong></span>
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    navigator.clipboard.writeText(window.location.host);
+                    onShowToast('success', 'Domain Copied', 'Paste into Firebase Console Authorized Domains.');
+                  }
+                }}
+                className="px-2.5 py-1 rounded-lg bg-white border border-amber-300 font-semibold text-amber-900 hover:bg-amber-100/50"
+              >
+                Copy Domain
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

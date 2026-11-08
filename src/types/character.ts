@@ -1,37 +1,47 @@
 export interface Character {
   id: string;
-  name: string;
-  fullName: string;
-  age: string;
-  gender: string;
-  nationality: string;
-  occupation: string;
-  universe: string;
-  category: string;
-  portraitUrl: string;
+
+  // Required core fields
+  name: string; // Character Name
+  nickname?: string; // Nickname
+  age: string; // Age
+  gender: string; // Gender
+  species?: string; // Species (e.g. Human, Elf, Android, Kitsune, Demon, Vampire)
+  occupation: string; // Occupation
+  category: string; // Category / Archetype
 
   // Character Profile
-  shortDescription: string;
-  appearance: string;
-  personality: string;
-  background: string;
-  relationships: string;
-  habitsPreferences: string;
-  strengthsWeaknesses: string;
+  personality: string; // Personality
+  appearance: string; // Appearance
+  background: string; // Background / Story
+  relationships?: string;
+  habitsPreferences?: string;
+  strengthsWeaknesses?: string;
 
   // Roleplay Settings
-  roleplayScenario: string;
-  initialGreeting: string;
-  perspective: string; // e.g., 'Second Person (You)', 'First Person (I)', 'Third Person'
-  speakingStyle: string;
-  behavioralRules: string;
-  systemPrompt: string;
+  scenario: string; // Scenario / Current Lore
+  greeting: string; // Greeting Message
+  perspective?: string;
+  speakingStyle?: string;
+  behavioralRules?: string;
+  systemPrompt?: string;
 
-  // Google AI Studio Links
-  chatUrl?: string; // Direct conversation URL (e.g. https://aistudio.google.com/...)
-  viewerLink?: string; // Public read-only viewer link
+  // Visuals & Links
+  avatarUrl: string; // Avatar Image (Upload or URL)
+  chatUrl?: string; // Google AI Studio Chat URL
+  viewerLink?: string; // Public Viewer Link
+  tags: string[]; // Tags list
 
-  // Metadata
+  // Legacy compatibility aliases
+  fullName?: string;
+  nationality?: string;
+  universe?: string;
+  shortDescription?: string;
+  portraitUrl?: string;
+  roleplayScenario?: string;
+  initialGreeting?: string;
+
+  // Status & Timestamps
   status: 'published' | 'draft';
   createdAt: number;
   updatedAt: number;

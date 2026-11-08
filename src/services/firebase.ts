@@ -92,6 +92,50 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 }
 
 /**
+ * Parses technical Firestore/Firebase errors into actionable human-readable messages.
+ */
+export function parseFriendlyErrorMessage(error: unknown): string {
+  if (!error) return 'An unexpected error occurred while saving.';
+  const msg = error instanceof Error ? error.message : String(error);
+
+  // If already a JSON string from handleFirestoreError, parse it first
+  try {
+    if (msg.startsWith('{') && msg.includes('"error"')) {
+      const parsed = JSON.parse(msg);
+      if (parsed.error) {
+        return parseFriendlyErrorMessage(parsed.error);
+      }
+    }
+  } catch {}
+
+  if (
+    msg.includes('permission-denied') ||
+    msg.includes('PERMISSION_DENIED') ||
+    msg.includes('Missing or insufficient permissions')
+  ) {
+    return `Firestore Write Permission Denied: Only the verified administrator (${DESIGNATED_ADMIN_EMAIL}) is permitted to create or update characters. Please ensure you are signed in.`;
+  }
+
+  if (msg.includes('auth/unauthorized-domain')) {
+    return 'Domain Not Authorized in Firebase: This website domain (e.g. Vercel deployment) has not been added to your Firebase project. In Firebase Console, go to Authentication > Settings > Authorized Domains and add your site domain.';
+  }
+
+  if (msg.includes('auth/popup-blocked')) {
+    return 'Browser Popup Blocked: Please allow popups for this site in your browser address bar and try again.';
+  }
+
+  if (msg.includes('client is offline') || msg.includes('unavailable')) {
+    return 'Network Connection Error: Could not connect to Google Cloud Firestore. Please check your internet connection and try again.';
+  }
+
+  if (msg.includes('Unsupported field value: undefined')) {
+    return 'Data Format Error: An undefined field was passed to Firestore. The character payload must use empty strings or null.';
+  }
+
+  return msg;
+}
+
+/**
  * Signs in using Firebase Google Authentication popup.
  * Server and Firebase security rules mandate verified email matching the authorized administrator.
  */

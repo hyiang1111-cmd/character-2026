@@ -20,7 +20,7 @@ import { CharacterForm } from './CharacterForm';
 import { ContentEditor } from './ContentEditor';
 import { FirebaseSetupGuide } from './FirebaseSetupGuide';
 import { useAuth } from '../../context/AuthContext';
-import { saveCharacter, deleteCharacter } from '../../services/storage';
+import { saveCharacter, deleteCharacter, duplicateCharacter } from '../../services/storage';
 
 interface AdminDashboardProps {
   characters: Character[];
@@ -86,14 +86,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       };
     }
 
-    await saveCharacter(charToSave);
+    // Execute real Firestore write operation
+    const saved = await saveCharacter(charToSave);
+
+    // Only close form and refresh after Firestore confirms write
     setIsCreatingNew(false);
     setEditingCharacter(null);
-    onRefreshData();
+    await onRefreshData();
+
     onShowToast(
       'success',
-      editingCharacter ? 'Character Updated' : 'Character Archived',
-      `"${charToSave.name}" was successfully saved.`
+      editingCharacter ? 'Character Updated in Firestore' : 'Character Saved to Firestore',
+      `"${saved.name}" was successfully committed to the database.`
     );
   };
 
@@ -111,6 +115,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       nextStatus === 'published' ? 'Character Published' : 'Moved to Drafts',
       `"${char.name}" is now ${nextStatus}.`
     );
+  };
+
+  const handleDuplicateCharacter = async (char: Character) => {
+    try {
+      const copy = await duplicateCharacter(char);
+      onRefreshData();
+      onShowToast('success', 'Character Duplicated', `"${copy.name}" was created as a draft.`);
+    } catch (err: any) {
+      onShowToast('error', 'Duplication Failed', err?.message);
+    }
   };
 
   const confirmDeleteCharacter = async () => {
@@ -297,6 +311,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 characters={characters}
                 onAddNew={handleStartCreate}
                 onEdit={handleStartEdit}
+                onDuplicate={handleDuplicateCharacter}
                 onDelete={(id, name) => setCharacterToDelete({ id, name })}
                 onTogglePublish={handleTogglePublish}
                 onPreview={onPreviewCharacter}

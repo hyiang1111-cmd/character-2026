@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExternalLink, Eye, MessageSquare, Sparkles, User, AlertCircle, Copy, Check } from 'lucide-react';
+import { ExternalLink, Eye, MessageSquare, Sparkles, User, AlertCircle, Copy, Check, Tag } from 'lucide-react';
 import { Character } from '../../types/character';
 import { isValidHttpsUrl } from '../../services/promptGenerator';
 
@@ -16,21 +16,24 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
   onStartChat,
   onViewChat,
 }) => {
+  const avatar = character.avatarUrl || character.portraitUrl;
   const hasValidChatUrl = Boolean(character.chatUrl && isValidHttpsUrl(character.chatUrl));
   const hasValidViewerLink = Boolean(character.viewerLink && isValidHttpsUrl(character.viewerLink));
 
   return (
     <article className="group bg-white rounded-3xl border border-[#F1D4DF] hover:border-[#E9A9BB] shadow-sm hover:shadow-md transition-all duration-300 flex flex-col overflow-hidden">
       {/* Portrait area */}
-      <div className="relative aspect-[4/3] sm:aspect-square overflow-hidden bg-[#FBE6ED]/50 cursor-pointer" onClick={() => onOpenDetails(character)}>
-        {character.portraitUrl ? (
+      <div
+        className="relative aspect-[4/3] sm:aspect-square overflow-hidden bg-[#FBE6ED]/50 cursor-pointer"
+        onClick={() => onOpenDetails(character)}
+      >
+        {avatar ? (
           <img
-            src={character.portraitUrl}
+            src={avatar}
             alt={character.name}
             className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500"
             loading="lazy"
             onError={(e) => {
-              // Fallback to placeholder if broken image
               (e.target as HTMLElement).style.display = 'none';
             }}
           />
@@ -59,10 +62,10 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
           )}
         </div>
 
-        {character.universe && (
+        {character.species && (
           <div className="absolute bottom-3 left-3 right-3 pointer-events-none">
-            <span className="inline-block px-2.5 py-0.5 rounded-full bg-black/40 backdrop-blur-xs text-white text-[10px] font-medium truncate max-w-full">
-              {character.universe}
+            <span className="inline-block px-2.5 py-0.5 rounded-full bg-black/45 backdrop-blur-xs text-white text-[10px] font-medium truncate max-w-full">
+              {character.species}
             </span>
           </div>
         )}
@@ -71,30 +74,27 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
       {/* Content area */}
       <div className="p-5 flex-1 flex flex-col justify-between">
         <div>
-          {/* Header & Full Name */}
+          {/* Header & Nickname */}
           <div className="mb-2">
-            <h3
-              onClick={() => onOpenDetails(character)}
-              className="font-serif-title text-2xl font-semibold text-[#51434A] group-hover:text-[#D88CA3] transition-colors cursor-pointer truncate"
-              title={character.name}
-            >
-              {character.name}
-            </h3>
-            {character.fullName && character.fullName !== character.name && (
-              <p className="text-xs text-[#8E7A84] truncate">{character.fullName}</p>
+            <div className="flex items-baseline gap-2">
+              <h3
+                onClick={() => onOpenDetails(character)}
+                className="font-serif-title text-2xl font-semibold text-[#51434A] group-hover:text-[#D88CA3] transition-colors cursor-pointer truncate"
+                title={character.name}
+              >
+                {character.name}
+              </h3>
+            </div>
+            {character.nickname && (
+              <p className="text-xs text-[#8E7A84] italic truncate">"{character.nickname}"</p>
             )}
           </div>
 
           {/* Quick traits */}
-          <div className="flex flex-wrap gap-2 text-[11px] text-[#6E5C65] mb-3">
+          <div className="flex flex-wrap gap-1.5 text-[11px] text-[#6E5C65] mb-3">
             {character.age && (
               <span className="px-2 py-0.5 rounded-md bg-[#FFF5F7] border border-[#F1D4DF]">
                 {character.age}
-              </span>
-            )}
-            {character.occupation && (
-              <span className="px-2 py-0.5 rounded-md bg-[#FFF5F7] border border-[#F1D4DF] truncate max-w-[150px]">
-                {character.occupation}
               </span>
             )}
             {character.gender && (
@@ -102,12 +102,36 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
                 {character.gender}
               </span>
             )}
+            {character.occupation && (
+              <span className="px-2 py-0.5 rounded-md bg-[#FFF5F7] border border-[#F1D4DF] truncate max-w-[140px]">
+                {character.occupation}
+              </span>
+            )}
           </div>
 
-          {/* Short description */}
-          <p className="text-xs text-[#6E5C65] line-clamp-2 leading-relaxed mb-4 font-light">
-            {character.shortDescription || character.personality || 'No summary provided for this character.'}
+          {/* Short summary or personality preview */}
+          <p className="text-xs text-[#6E5C65] line-clamp-2 leading-relaxed mb-3 font-light">
+            {character.personality || character.background || character.scenario || 'No personality description recorded.'}
           </p>
+
+          {/* Tags */}
+          {character.tags && character.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-4">
+              {character.tags.slice(0, 3).map((t) => (
+                <span
+                  key={t}
+                  className="px-2 py-0.5 rounded-md bg-[#FBE6ED]/60 text-[10px] text-[#8E7A84]"
+                >
+                  #{t}
+                </span>
+              ))}
+              {character.tags.length > 3 && (
+                <span className="text-[10px] text-[#8E7A84] self-center">
+                  +{character.tags.length - 3}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}
@@ -117,7 +141,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
             <button
               onClick={() => onStartChat(character)}
               className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white text-xs font-bold tracking-wide hover:brightness-105 active:scale-98 transition-all shadow-xs"
-              title="Open Google AI Studio conversation in a new tab"
+              title="Open saved Google AI Studio conversation in a new tab"
             >
               <MessageSquare className="w-3.5 h-3.5" />
               <span>START CHAT</span>
