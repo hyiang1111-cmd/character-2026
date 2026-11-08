@@ -2,6 +2,9 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   auth,
   loginWithGoogle,
+  loginWithEmailPassword,
+  createAdminAccount,
+  sendAdminPasswordReset,
   logoutFirebase,
   checkServerAdminAuthorization,
   DESIGNATED_ADMIN_EMAIL
@@ -15,6 +18,9 @@ interface AuthContextType {
   isAuthenticating: boolean;
   authError: string | null;
   loginAsAdmin: () => Promise<void>;
+  loginWithPassword: (password: string) => Promise<void>;
+  setupAdminPassword: (password: string) => Promise<void>;
+  resetAdminPassword: () => Promise<void>;
   logout: () => Promise<void>;
   clearAuthError: () => void;
 }
@@ -26,6 +32,9 @@ const AuthContext = createContext<AuthContextType>({
   isAuthenticating: false,
   authError: null,
   loginAsAdmin: async () => {},
+  loginWithPassword: async () => {},
+  setupAdminPassword: async () => {},
+  resetAdminPassword: async () => {},
   logout: async () => {},
   clearAuthError: () => {},
 });
@@ -103,6 +112,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginWithPassword = async (password: string) => {
+    setIsAuthenticating(true);
+    setAuthError(null);
+    try {
+      const user = await loginWithEmailPassword(DESIGNATED_ADMIN_EMAIL, password);
+      const authorized = await checkServerAdminAuthorization(user);
+
+      if (!authorized) {
+        setIsAdmin(false);
+        setCurrentUser(null);
+        await logoutFirebase();
+        throw new Error(`Access Denied: Account ${user.email} is not authorized.`);
+      }
+
+      setIsAdmin(true);
+      setCurrentUser({
+        email: user.email,
+        name: 'Administrator',
+        uid: user.uid,
+      });
+    } catch (err: any) {
+      const message = err?.message || 'Authentication failed. Please check password.';
+      setAuthError(message);
+      setIsAdmin(false);
+      setCurrentUser(null);
+      throw err;
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const setupAdminPassword = async (password: string) => {
+    setIsAuthenticating(true);
+    setAuthError(null);
+    try {
+      const user = await createAdminAccount(DESIGNATED_ADMIN_EMAIL, password);
+      setIsAdmin(true);
+      setCurrentUser({
+        email: user.email,
+        name: 'Administrator',
+        uid: user.uid,
+      });
+    } catch (err: any) {
+      const message = err?.message || 'Failed to setup admin account.';
+      setAuthError(message);
+      throw err;
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const resetAdminPassword = async () => {
+    try {
+      await sendAdminPasswordReset(DESIGNATED_ADMIN_EMAIL);
+    } catch (err: any) {
+      throw err;
+    }
+  };
+
   const logout = async () => {
     setIsAuthenticating(true);
     try {
@@ -126,6 +194,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticating,
         authError,
         loginAsAdmin,
+        loginWithPassword,
+        setupAdminPassword,
+        resetAdminPassword,
         logout,
         clearAuthError,
       }}

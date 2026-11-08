@@ -23,16 +23,47 @@ import { Sparkles, BookOpen, Layers } from 'lucide-react';
 function AppContent() {
   const { isAdmin } = useAuth();
 
+  // Hash-based routing to keep navigation strictly within the current origin
+  const getInitialView = (): AppView => {
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = window.location.hash.replace('#', '').trim() as AppView;
+      if (['home', 'library', 'about', 'admin', 'admin-login'].includes(hash)) {
+        return hash;
+      }
+    }
+    return 'home';
+  };
+
   // State
   const [characters, setCharacters] = useState<Character[]>([]);
   const [siteContent, setSiteContent] = useState<SiteContent>(DEFAULT_SITE_CONTENT);
-  const [currentView, setCurrentView] = useState<AppView>('home');
+  const [currentView, setCurrentView] = useState<AppView>(getInitialView);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedCharacterModal, setSelectedCharacterModal] = useState<Character | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const navigateView = (view: AppView) => {
+    setCurrentView(view);
+    if (typeof window !== 'undefined') {
+      window.location.hash = `#${view}`;
+    }
+  };
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      if (typeof window !== 'undefined' && window.location.hash) {
+        const hash = window.location.hash.replace('#', '').trim() as AppView;
+        if (['home', 'library', 'about', 'admin', 'admin-login'].includes(hash)) {
+          setCurrentView(hash);
+        }
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   // Load site content and subscribe to characters
   const refreshData = async () => {
@@ -129,7 +160,7 @@ function AppContent() {
   // Handle dedicated Admin Login view
   if (currentView === 'admin-login') {
     if (isAdmin) {
-      // Auto-redirect authenticated admin to the dashboard
+      // Auto-transition authenticated admin to the dashboard
       return (
         <>
           <AdminDashboard
@@ -137,7 +168,7 @@ function AppContent() {
             siteContent={siteContent}
             onRefreshData={refreshData}
             onPreviewCharacter={(char) => setSelectedCharacterModal(char)}
-            onReturnToSite={() => setCurrentView('home')}
+            onReturnToSite={() => navigateView('home')}
             onShowToast={showToast}
           />
           <CharacterModal
@@ -158,7 +189,7 @@ function AppContent() {
         <Header
           siteContent={siteContent}
           currentView={currentView}
-          onNavigate={setCurrentView}
+          onNavigate={navigateView}
           onOpenLogin={() => setIsLoginOpen(true)}
         />
         <div className="flex-1 flex items-center justify-center p-4">
@@ -166,14 +197,14 @@ function AppContent() {
             isPageMode={true}
             onSuccess={() => {
               showToast('success', 'Admin Authenticated', 'Welcome to the Curator Dashboard.');
-              setCurrentView('admin');
+              navigateView('admin');
             }}
-            onBackToSite={() => setCurrentView('library')}
+            onBackToSite={() => navigateView('library')}
           />
         </div>
         <Footer
           siteContent={siteContent}
-          onNavigate={setCurrentView}
+          onNavigate={navigateView}
           onOpenLogin={() => setIsLoginOpen(true)}
           isAdmin={isAdmin}
         />
@@ -190,7 +221,7 @@ function AppContent() {
           <Header
             siteContent={siteContent}
             currentView={currentView}
-            onNavigate={setCurrentView}
+            onNavigate={navigateView}
             onOpenLogin={() => setIsLoginOpen(true)}
           />
           <div className="flex-1 flex items-center justify-center p-6 text-center">
@@ -206,13 +237,13 @@ function AppContent() {
               </p>
               <div className="flex flex-col gap-2 pt-2">
                 <button
-                  onClick={() => setCurrentView('admin-login')}
+                  onClick={() => navigateView('admin-login')}
                   className="w-full py-2.5 rounded-full bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white text-xs font-bold shadow-xs active:scale-95 transition-all"
                 >
                   Sign In to Admin
                 </button>
                 <button
-                  onClick={() => setCurrentView('library')}
+                  onClick={() => navigateView('library')}
                   className="w-full py-2 rounded-full bg-white border border-[#F1D4DF] text-xs font-medium text-[#6E5C65] hover:bg-[#FFF5F7] transition-all"
                 >
                   Return to Character Library
@@ -225,12 +256,12 @@ function AppContent() {
             onClose={() => setIsLoginOpen(false)}
             onSuccess={() => {
               showToast('success', 'Admin Authenticated', 'Welcome to the Curator Dashboard.');
-              setCurrentView('admin');
+              navigateView('admin');
             }}
           />
           <Footer
             siteContent={siteContent}
-            onNavigate={setCurrentView}
+            onNavigate={navigateView}
             onOpenLogin={() => setIsLoginOpen(true)}
             isAdmin={isAdmin}
           />
@@ -245,7 +276,7 @@ function AppContent() {
           siteContent={siteContent}
           onRefreshData={refreshData}
           onPreviewCharacter={(char) => setSelectedCharacterModal(char)}
-          onReturnToSite={() => setCurrentView('home')}
+          onReturnToSite={() => navigateView('home')}
           onShowToast={showToast}
         />
         <CharacterModal
@@ -267,7 +298,7 @@ function AppContent() {
       <Header
         siteContent={siteContent}
         currentView={currentView}
-        onNavigate={setCurrentView}
+        onNavigate={navigateView}
         onOpenLogin={() => setIsLoginOpen(true)}
       />
 
@@ -290,7 +321,7 @@ function AppContent() {
               {filteredCharacters.length === 0 ? (
                 <EmptyState
                   isAdmin={isAdmin}
-                  onAddCharacter={() => setCurrentView('admin')}
+                  onAddCharacter={() => navigateView('admin')}
                   isSearchFiltered={Boolean(searchQuery || selectedCategory)}
                   onClearFilters={() => {
                     setSearchQuery('');
@@ -330,7 +361,7 @@ function AppContent() {
             <AboutSection
               siteContent={siteContent}
               onExploreLibrary={() => {
-                setCurrentView('library');
+                navigateView('library');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
             />
@@ -386,7 +417,7 @@ function AppContent() {
             {filteredCharacters.length === 0 ? (
               <EmptyState
                 isAdmin={isAdmin}
-                onAddCharacter={() => setCurrentView('admin')}
+                onAddCharacter={() => navigateView('admin')}
                 isSearchFiltered={Boolean(searchQuery || selectedCategory)}
                 onClearFilters={() => {
                   setSearchQuery('');
@@ -413,7 +444,7 @@ function AppContent() {
           <AboutSection
             siteContent={siteContent}
             onExploreLibrary={() => {
-              setCurrentView('library');
+              navigateView('library');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
           />
@@ -423,7 +454,7 @@ function AppContent() {
       {/* Global Footer */}
       <Footer
         siteContent={siteContent}
-        onNavigate={setCurrentView}
+        onNavigate={navigateView}
         onOpenLogin={() => setIsLoginOpen(true)}
         isAdmin={isAdmin}
       />
@@ -443,7 +474,7 @@ function AppContent() {
         onClose={() => setIsLoginOpen(false)}
         onSuccess={() => {
           showToast('success', 'Admin Authenticated', 'Curator Dashboard is now unlocked.');
-          setCurrentView('admin');
+          navigateView('admin');
         }}
       />
 

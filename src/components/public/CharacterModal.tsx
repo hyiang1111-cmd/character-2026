@@ -58,14 +58,8 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
     }
   };
 
-  const handleCopyPromptAndLaunchStudio = async () => {
+  const handleCopyPromptAndNotify = async () => {
     await handleCopyPrompt();
-    window.open('https://aistudio.google.com/', '_blank', 'noopener,noreferrer');
-    onShowToast(
-      'info',
-      'Google AI Studio Launched',
-      'Paste the copied prompt into System Instructions or initial message.'
-    );
   };
 
   return (
@@ -222,11 +216,11 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
               </button>
             ) : (
               <button
-                onClick={handleCopyPromptAndLaunchStudio}
+                onClick={handleCopyPromptAndNotify}
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white border border-[#F1D4DF] text-[#6E5C65] text-xs font-semibold hover:border-[#E9A9BB] hover:text-[#51434A] transition-all"
               >
                 <Copy className="w-4 h-4 text-[#D88CA3]" />
-                <span>Copy Prompt & Open AI Studio</span>
+                <span>Copy Character Prompt</span>
               </button>
             )}
           </div>
@@ -444,13 +438,12 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
               <div className="p-4 rounded-2xl bg-[#FBE6ED]/60 border border-[#E9A9BB]/50 text-xs text-[#6E5C65] space-y-2">
                 <div className="flex items-center gap-2 font-semibold text-[#51434A]">
                   <Info className="w-4 h-4 text-[#D88CA3]" />
-                  <span>How to use with Google AI Studio</span>
+                  <span>How to use character roleplay prompts</span>
                 </div>
                 <ol className="list-decimal list-inside space-y-1 pl-1">
-                  <li>Click <strong>Copy Prompt</strong> above or copy with the button below.</li>
-                  <li>Open <a href="https://aistudio.google.com/" target="_blank" rel="noopener noreferrer" className="text-[#D88CA3] underline font-medium">Google AI Studio</a> in a new tab.</li>
-                  <li>Click <strong>New Chat Prompt</strong>.</li>
-                  <li>Paste this prompt into the <strong>System Instructions</strong> pane, or directly as your first message.</li>
+                  <li>Click <strong>Copy Prompt</strong> above to copy the persona instructions to your clipboard.</li>
+                  <li>Paste this prompt into your favorite LLM or Google AI Studio chat session.</li>
+                  <li>The persona will adopt this roleplay scenario, speaking style, and behavioral constraints.</li>
                 </ol>
               </div>
             </div>

@@ -587,7 +587,7 @@ export const CharacterForm: React.FC<CharacterFormProps> = ({
             type="url"
             value={formData.chatUrl || ''}
             onChange={(e) => handleFieldChange('chatUrl', e.target.value)}
-            placeholder="https://aistudio.google.com/..."
+            placeholder="https://..."
             className={`flex-1 px-4 py-2.5 rounded-xl bg-white border text-xs text-[#51434A] focus:outline-none transition-all font-mono ${
               formData.chatUrl && !isChatUrlValid
                 ? 'border-red-400 bg-red-50/40'
@@ -628,7 +628,7 @@ export const CharacterForm: React.FC<CharacterFormProps> = ({
               type="url"
               value={formData.viewerLink || ''}
               onChange={(e) => handleFieldChange('viewerLink', e.target.value)}
-              placeholder="https://aistudio.google.com/..."
+              placeholder="https://..."
               className="flex-1 px-4 py-2 rounded-xl bg-white border border-[#F1D4DF] text-xs text-[#51434A] focus:outline-none focus:border-[#E9A9BB] font-mono"
             />
             {hasViewerLink && (

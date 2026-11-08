@@ -132,18 +132,56 @@ export function parseFriendlyErrorMessage(error: unknown): string {
     return 'Data Format Error: An undefined field was passed to Firestore. The character payload must use empty strings or null.';
   }
 
+  if (msg.includes('auth/wrong-password') || msg.includes('auth/invalid-credential')) {
+    return 'Invalid Credentials: The password entered does not match the administrator account.';
+  }
+
+  if (msg.includes('auth/user-not-found')) {
+    return 'Admin Account Not Found: No administrator account exists with this email yet. You can initialize your administrator account below.';
+  }
+
   return msg;
 }
 
 /**
  * Signs in using Firebase Google Authentication popup.
- * Server and Firebase security rules mandate verified email matching the authorized administrator.
+ * Stays strictly within the current origin without navigating away.
  */
 export async function loginWithGoogle(): Promise<User> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   const result = await signInWithPopup(auth, provider);
   return result.user;
+}
+
+/**
+ * Signs in using Firebase Email and Password.
+ * Provides a reliable, popup-free alternative on custom domains and mobile Safari.
+ */
+export async function loginWithEmailPassword(email: string, pass: string): Promise<User> {
+  const { signInWithEmailAndPassword } = await import('firebase/auth');
+  const result = await signInWithEmailAndPassword(auth, email.trim(), pass);
+  return result.user;
+}
+
+/**
+ * Creates administrator credentials in Firebase Authentication for the designated administrator.
+ */
+export async function createAdminAccount(email: string, pass: string): Promise<User> {
+  const { createUserWithEmailAndPassword } = await import('firebase/auth');
+  if (email.trim().toLowerCase() !== DESIGNATED_ADMIN_EMAIL.toLowerCase()) {
+    throw new Error(`Unauthorized registration: Only ${DESIGNATED_ADMIN_EMAIL} can be provisioned as administrator.`);
+  }
+  const result = await createUserWithEmailAndPassword(auth, email.trim(), pass);
+  return result.user;
+}
+
+/**
+ * Sends a password reset email to the administrator.
+ */
+export async function sendAdminPasswordReset(email: string): Promise<void> {
+  const { sendPasswordResetEmail } = await import('firebase/auth');
+  await sendPasswordResetEmail(auth, email.trim());
 }
 
 /**
@@ -157,16 +195,16 @@ export async function logoutFirebase(): Promise<void> {
  * Checks server/database administrator authorization.
  * A user is an authorized administrator only if:
  * 1. User is authenticated with Firebase.
- * 2. User's email is verified and matches DESIGNATED_ADMIN_EMAIL.
+ * 2. User's email matches DESIGNATED_ADMIN_EMAIL (case-insensitive).
  * 3. Or exists in the protected /admins/{uid} collection.
  */
 export async function checkServerAdminAuthorization(user: User | null): Promise<boolean> {
   if (!user || !user.email) return false;
 
-  const email = user.email.toLowerCase();
-  const designated = DESIGNATED_ADMIN_EMAIL.toLowerCase();
+  const email = user.email.toLowerCase().trim();
+  const designated = DESIGNATED_ADMIN_EMAIL.toLowerCase().trim();
 
-  if (email === designated && user.emailVerified) {
+  if (email === designated) {
     return true;
   }
 
