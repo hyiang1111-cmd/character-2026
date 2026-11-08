@@ -99,24 +99,25 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
         <div className="p-6 overflow-y-auto space-y-6">
           {/* Hero Portrait & Summary card */}
           <div className="flex flex-col sm:flex-row gap-6 bg-white p-5 rounded-2xl border border-[#F1D4DF] shadow-xs">
-            {/* Portrait */}
-            <div className="w-full sm:w-44 h-56 sm:h-56 shrink-0 rounded-2xl overflow-hidden bg-[#FBE6ED] border border-[#F1D4DF] relative">
-              {character.avatarUrl || character.portraitUrl ? (
-                <img
-                  src={character.avatarUrl || character.portraitUrl}
-                  alt={character.name}
-                  className="w-full h-full object-cover object-top"
-                />
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center text-center p-4">
-                  <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-xs mb-2">
-                    <span className="font-serif-title text-2xl font-bold text-[#D88CA3]">
-                      {character.name.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <span className="text-xs text-[#8E7A84]">Archived Persona</span>
+            {/* Portrait with circular double white border */}
+            <div className="shrink-0 flex items-center justify-center">
+              <div className="p-1 sm:p-1.5 rounded-full bg-white/80 border-2 border-white ring-2 ring-[#E8D7F7] ring-offset-2 ring-offset-white shadow-sm">
+                <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full overflow-hidden bg-[#FAF6FC] flex items-center justify-center">
+                  {character.avatarUrl || character.portraitUrl ? (
+                    <img
+                      src={character.avatarUrl || character.portraitUrl}
+                      alt={character.name}
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-gradient-to-br from-[#E8D7F7] to-[#E5D4F5] flex items-center justify-center">
+                      <span className="font-serif-title text-3xl font-bold text-[#493B55]">
+                        {character.name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Basic Info & Summary */}

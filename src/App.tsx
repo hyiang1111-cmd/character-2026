@@ -14,6 +14,7 @@ import { ToastContainer, ToastMessage } from './components/common/Toast';
 import { Hero } from './components/public/Hero';
 import { CharacterCard } from './components/public/CharacterCard';
 import { CharacterModal } from './components/public/CharacterModal';
+import { ScenarioModal } from './components/public/ScenarioModal';
 import { AboutSection } from './components/public/AboutSection';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AdminLogin } from './components/admin/AdminLogin';
@@ -42,6 +43,7 @@ function AppContent() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedCharacterModal, setSelectedCharacterModal] = useState<Character | null>(null);
+  const [selectedScenarioModal, setSelectedScenarioModal] = useState<Character | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,14 +111,14 @@ function AppContent() {
       window.open(character.chatUrl, '_blank', 'noopener,noreferrer');
       showToast(
         'success',
-        `Opening Chat: ${character.name}`,
-        'Connecting directly to saved Google AI Studio conversation.'
+        `Mở trò chuyện: ${character.name}`,
+        'Kết nối trực tiếp tới Google AI Studio.'
       );
     } else {
       showToast(
-        'error',
-        'Chat Link Unavailable',
-        `No Google AI Studio chat link has been saved for ${character.name}.`
+        'info',
+        'Thông báo',
+        'Nhân vật chưa có liên kết trò chuyện'
       );
     }
   };
@@ -179,6 +181,13 @@ function AppContent() {
             onViewChat={handleViewChat}
             onShowToast={showToast}
           />
+          <ScenarioModal
+            character={selectedScenarioModal}
+            isOpen={Boolean(selectedScenarioModal)}
+            onClose={() => setSelectedScenarioModal(null)}
+            onStartChat={handleStartChat}
+            onShowToast={showToast}
+          />
           <ToastContainer toasts={toasts} onDismiss={dismissToast} />
         </>
       );
@@ -233,6 +242,13 @@ function AppContent() {
             onClose={() => setSelectedCharacterModal(null)}
             onStartChat={handleStartChat}
             onViewChat={handleViewChat}
+            onShowToast={showToast}
+          />
+          <ScenarioModal
+            character={selectedScenarioModal}
+            isOpen={Boolean(selectedScenarioModal)}
+            onClose={() => setSelectedScenarioModal(null)}
+            onStartChat={handleStartChat}
             onShowToast={showToast}
           />
           <ToastContainer toasts={toasts} onDismiss={dismissToast} />
@@ -344,6 +360,13 @@ function AppContent() {
           onViewChat={handleViewChat}
           onShowToast={showToast}
         />
+        <ScenarioModal
+          character={selectedScenarioModal}
+          isOpen={Boolean(selectedScenarioModal)}
+          onClose={() => setSelectedScenarioModal(null)}
+          onStartChat={handleStartChat}
+          onShowToast={showToast}
+        />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </>
     );
@@ -405,6 +428,7 @@ function AppContent() {
                         key={char.id}
                         character={char}
                         onOpenDetails={(c) => setSelectedCharacterModal(c)}
+                        onOpenScenario={(c) => setSelectedScenarioModal(c)}
                         onStartChat={handleStartChat}
                         onViewChat={handleViewChat}
                       />
@@ -488,6 +512,7 @@ function AppContent() {
                     key={char.id}
                     character={char}
                     onOpenDetails={(c) => setSelectedCharacterModal(c)}
+                    onOpenScenario={(c) => setSelectedScenarioModal(c)}
                     onStartChat={handleStartChat}
                     onViewChat={handleViewChat}
                   />
@@ -523,6 +548,14 @@ function AppContent() {
         onClose={() => setSelectedCharacterModal(null)}
         onStartChat={handleStartChat}
         onViewChat={handleViewChat}
+        onShowToast={showToast}
+      />
+
+      <ScenarioModal
+        character={selectedScenarioModal}
+        isOpen={Boolean(selectedScenarioModal)}
+        onClose={() => setSelectedScenarioModal(null)}
+        onStartChat={handleStartChat}
         onShowToast={showToast}
       />
 
