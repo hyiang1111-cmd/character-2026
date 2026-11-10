@@ -152,7 +152,25 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
   useEffect(() => {
     loadAllMetrics();
     loadAllRecent();
-  }, []);
+
+    const handleReviewsUpdated = (e: any) => {
+      const charId = e?.detail?.characterId;
+      if (selectedChar?.id && (!charId || charId === selectedChar.id)) {
+        loadData(selectedChar.id);
+      }
+      loadAllMetrics();
+      loadAllRecent();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pca_reviews_updated', handleReviewsUpdated);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('pca_reviews_updated', handleReviewsUpdated);
+      }
+    };
+  }, [selectedChar?.id]);
 
   useEffect(() => {
     if (selectedChar?.id) {

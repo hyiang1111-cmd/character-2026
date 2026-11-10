@@ -417,14 +417,16 @@ export async function getCharacterReviews(
         query = query.eq('character_id', characterId);
       }
       if (!includeHidden) {
-        query = query.eq('is_hidden', false);
+        query = query.or('is_hidden.eq.false,is_hidden.is.null');
       }
       const { data, error } = await query;
       if (!error && data) {
         return data as CharacterReview[];
+      } else if (error) {
+        console.warn('Supabase character_reviews select notice:', error.message);
       }
-    } catch {
-      // Fallback
+    } catch (e) {
+      console.warn('Failed to fetch reviews from Supabase:', e);
     }
   }
 
@@ -465,17 +467,51 @@ export async function submitOrUpdateReview(reviewData: {
   };
 
   const client = getSupabaseClient();
+  let savedToSupabase = false;
+
   if (client) {
+    // 1. Try atomic server RPC first
     try {
-      await client.from('character_reviews').upsert(review);
-    } catch (e) {
-      console.warn('Failed to upsert review in Supabase:', e);
+      const { data: rpcRes, error: rpcErr } = await client.rpc('submit_character_review', {
+        p_character_id: reviewData.character_id,
+        p_rating: review.rating,
+        p_feedback: review.feedback,
+      });
+
+      if (!rpcErr && rpcRes) {
+        savedToSupabase = true;
+        if (typeof rpcRes === 'object' && rpcRes.id) {
+          review.id = rpcRes.id;
+          review.username = rpcRes.username || review.username;
+          review.avatar_url = rpcRes.avatar_url || review.avatar_url;
+          review.created_at = rpcRes.created_at || review.created_at;
+          review.updated_at = rpcRes.updated_at || review.updated_at;
+        }
+      } else if (rpcErr) {
+        console.warn('RPC submit_character_review notice, trying direct upsert:', rpcErr.message);
+      }
+    } catch (rpcEx) {
+      console.warn('RPC submit_character_review exception, falling back to direct upsert:', rpcEx);
+    }
+
+    // 2. Direct upsert fallback if RPC wasn't executed or failed
+    if (!savedToSupabase) {
+      try {
+        const { error: directErr } = await client.from('character_reviews').upsert(review);
+        if (directErr) {
+          console.error('Failed to upsert review into Supabase character_reviews:', directErr);
+        } else {
+          savedToSupabase = true;
+        }
+      } catch (e) {
+        console.warn('Failed to upsert review in Supabase:', e);
+      }
     }
   }
 
-  // Update local reviews
+  // Update local reviews storage cache
   const all = getLocal<CharacterReview[]>(STORAGE_REVIEWS, []);
-  const idx = all.findIndex((r) => r.id === review.id);
+  const idx = all.findIndex((r) => r.id === review.id || (r.user_id === review.user_id && r.character_id === review.character_id));
   if (idx >= 0) {
     all[idx] = review;
   } else {
@@ -486,16 +522,36 @@ export async function submitOrUpdateReview(reviewData: {
   // Recalculate metrics for this character
   await recalculateCharacterMetrics(reviewData.character_id);
 
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('pca_reviews_updated', { detail: { characterId: reviewData.character_id } }));
+  }
+
   return review;
 }
 
 export async function deleteReview(reviewId: string, characterId: string): Promise<void> {
   const client = getSupabaseClient();
   if (client) {
+    let deletedViaRpc = false;
     try {
-      await client.from('character_reviews').delete().eq('id', reviewId);
+      const { error: rpcErr } = await client.rpc('delete_character_review', {
+        p_review_id: reviewId,
+      });
+      if (!rpcErr) {
+        deletedViaRpc = true;
+      } else {
+        console.warn('RPC delete_character_review notice, using direct delete:', rpcErr.message);
+      }
     } catch (e) {
-      console.warn('Failed to delete review in Supabase:', e);
+      console.warn('RPC delete_character_review exception:', e);
+    }
+
+    if (!deletedViaRpc) {
+      try {
+        await client.from('character_reviews').delete().eq('id', reviewId);
+      } catch (e) {
+        console.warn('Failed to delete review in Supabase:', e);
+      }
     }
   }
 
@@ -507,6 +563,10 @@ export async function deleteReview(reviewId: string, characterId: string): Promi
 
   // Recalculate metrics
   await recalculateCharacterMetrics(characterId);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('pca_reviews_updated', { detail: { characterId } }));
+  }
 }
 
 export async function setReviewHiddenStatus(
