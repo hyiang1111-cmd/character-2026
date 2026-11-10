@@ -35,6 +35,7 @@ import {
   recordVerifiedCharacterView,
   recordVerifiedCharacterChat,
   getCharacterTags,
+  subscribeToCharacterTags,
   CharacterTagRecord
 } from './services/characterRankingStorage';
 import {
@@ -173,6 +174,11 @@ function AppContent() {
   useEffect(() => {
     let activeChannel: any = null;
 
+    // Realtime Cloud Firestore subscription for all users and guests worldwide
+    const unsubscribeFirestoreTags = subscribeToCharacterTags((latestTags) => {
+      setCustomTags(latestTags);
+    });
+
     const handleTagsUpdated = async () => {
       try {
         const latestTags = await getCharacterTags();
@@ -217,6 +223,7 @@ function AppContent() {
     subscribeToTagsChannel();
 
     return () => {
+      unsubscribeFirestoreTags();
       window.removeEventListener('pca_tags_updated', handleTagsUpdated);
       window.removeEventListener('storage', handleTagsUpdated);
       window.removeEventListener('pca_supabase_credentials_changed', subscribeToTagsChannel);

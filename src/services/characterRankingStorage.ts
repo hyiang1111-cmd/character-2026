@@ -1,3 +1,5 @@
+import { db, auth, checkServerAdminAuthorization, handleFirestoreError, OperationType } from './firebase';
+import { collection, doc, getDocs, setDoc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { getSupabaseClient } from './supabase';
 import { Character } from '../types/character';
 import { saveCharacter } from './storage';
@@ -121,85 +123,139 @@ function setLocal<T>(key: string, value: T): void {
 // 1. CHARACTER TAGS MANAGEMENT
 // ==========================================
 
+const CHARACTER_TAGS_COLLECTION = 'character_tags';
+
+/**
+ * Loads character tags from Cloud Firestore (primary cloud server database) with Supabase & Local fallback.
+ * Public visitors (including non-logged in guests) receive all public active tags from the central server.
+ */
 export async function getCharacterTags(): Promise<CharacterTagRecord[]> {
+  const tagMap = new Map<string, CharacterTagRecord>();
+
+  // 1. Primary Source: Cloud Firestore (without orderBy to avoid missing index errors)
+  try {
+    const q = query(collection(db, CHARACTER_TAGS_COLLECTION));
+    const snapshot = await getDocs(q);
+    snapshot.forEach((docSnap) => {
+      const data = docSnap.data() as CharacterTagRecord;
+      if (data && data.slug) {
+        tagMap.set(data.slug, data);
+      }
+    });
+  } catch (e) {
+    console.warn('Firestore character_tags query notice:', e);
+  }
+
+  // 2. Secondary Source: Supabase (if connected)
   const client = getSupabaseClient();
   if (client) {
     try {
       const { data, error } = await client
         .from('character_tags')
-        .select('*')
-        .order('sort_order', { ascending: true })
-        .order('name', { ascending: true });
+        .select('*');
 
       if (!error && data) {
-        // If Supabase returned records, update local cache so it matches database
-        if (data.length > 0) {
-          setLocal(STORAGE_TAGS, data);
-          return data as CharacterTagRecord[];
-        }
-
-        // If Supabase is connected but empty, check if Admin has local tags to auto-migrate!
-        const localTags = getLocal<CharacterTagRecord[]>(STORAGE_TAGS, []);
-        if (localTags.length > 0) {
-          console.log(`Auto-migrating ${localTags.length} local tags to Supabase...`);
-          for (const lt of localTags) {
-            try {
-              const { error: rpcErr } = await client.rpc('upsert_character_tag', { p_tag: lt });
-              if (rpcErr) {
-                await client.from('character_tags').upsert(lt);
-              }
-            } catch (syncErr) {
-              console.warn('Tag auto-migrate item notice:', syncErr);
-            }
+        data.forEach((d: any) => {
+          if (d && d.slug && !tagMap.has(d.slug)) {
+            tagMap.set(d.slug, d as CharacterTagRecord);
           }
-
-          // Re-fetch from Supabase to confirm
-          const { data: refetched } = await client
-            .from('character_tags')
-            .select('*')
-            .order('sort_order', { ascending: true })
-            .order('name', { ascending: true });
-
-          if (refetched && refetched.length > 0) {
-            setLocal(STORAGE_TAGS, refetched);
-            return refetched as CharacterTagRecord[];
-          }
-        }
-
-        return [];
-      } else if (error) {
-        console.warn('Supabase character_tags query notice:', error.message);
+        });
       }
     } catch (e) {
-      console.warn('Failed to load character tags from Supabase:', e);
+      console.warn('Supabase character_tags query notice:', e);
     }
   }
-  return getLocal<CharacterTagRecord[]>(STORAGE_TAGS, []);
+
+  // 3. Fallback to local storage cache if cloud calls return nothing
+  if (tagMap.size === 0) {
+    const localTags = getLocal<CharacterTagRecord[]>(STORAGE_TAGS, []);
+    localTags.forEach((lt) => {
+      if (lt && lt.slug) tagMap.set(lt.slug, lt);
+    });
+  }
+
+  const result = Array.from(tagMap.values()).sort((a, b) => {
+    const orderA = a.sort_order !== undefined ? Number(a.sort_order) : 0;
+    const orderB = b.sort_order !== undefined ? Number(b.sort_order) : 0;
+    if (orderA !== orderB) return orderA - orderB;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  if (result.length > 0) {
+    setLocal(STORAGE_TAGS, result);
+  }
+
+  return result;
+}
+
+/**
+ * Subscribes in real-time to Cloud Firestore character_tags collection.
+ * Automatically updates all connected clients across different devices & accounts when Admin creates/edits/deletes a tag.
+ */
+export function subscribeToCharacterTags(callback: (tags: CharacterTagRecord[]) => void): () => void {
+  try {
+    const q = query(collection(db, CHARACTER_TAGS_COLLECTION));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const records: CharacterTagRecord[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as CharacterTagRecord;
+          if (data && data.slug) {
+            records.push(data);
+          }
+        });
+        records.sort((a, b) => {
+          const orderA = a.sort_order !== undefined ? Number(a.sort_order) : 0;
+          const orderB = b.sort_order !== undefined ? Number(b.sort_order) : 0;
+          if (orderA !== orderB) return orderA - orderB;
+          return (a.name || '').localeCompare(b.name || '');
+        });
+        if (records.length > 0) {
+          setLocal(STORAGE_TAGS, records);
+        }
+        callback(records);
+      },
+      (error) => {
+        console.warn('Firestore character_tags subscription warning:', error);
+      }
+    );
+    return unsubscribe;
+  } catch (e) {
+    console.warn('Failed to setup Firestore tag subscription:', e);
+    return () => {};
+  }
 }
 
 export async function syncLocalTagsToSupabase(): Promise<{ count: number; error?: string }> {
-  const client = getSupabaseClient();
-  if (!client) {
-    return { count: 0, error: 'Chưa kết nối Supabase. Vui lòng kiểm tra cấu hình Supabase URL và Anon Key.' };
-  }
-
-  const localTags = getLocal<CharacterTagRecord[]>(STORAGE_TAGS, []);
-  if (localTags.length === 0) {
+  const currentTags = await getCharacterTags();
+  if (currentTags.length === 0) {
     return { count: 0 };
   }
 
+  // 1. Upload to Cloud Firestore
   let migratedCount = 0;
-  for (const t of localTags) {
+  for (const t of currentTags) {
     try {
-      const { error: rpcErr } = await client.rpc('upsert_character_tag', { p_tag: t });
-      if (!rpcErr) {
-        migratedCount++;
-      } else {
-        const { error: directErr } = await client.from('character_tags').upsert(t);
-        if (!directErr) migratedCount++;
-      }
+      await setDoc(doc(db, CHARACTER_TAGS_COLLECTION, t.id), t);
+      migratedCount++;
     } catch (e) {
-      console.warn('Tag manual sync notice:', e);
+      console.warn('Firestore tag sync item notice:', e);
+    }
+  }
+
+  // 2. Upload to Supabase if connected
+  const client = getSupabaseClient();
+  if (client) {
+    for (const t of currentTags) {
+      try {
+        const { error: rpcErr } = await client.rpc('upsert_character_tag', { p_tag: t });
+        if (rpcErr) {
+          await client.from('character_tags').upsert(t);
+        }
+      } catch (e) {
+        console.warn('Supabase tag sync item notice:', e);
+      }
     }
   }
 
@@ -212,8 +268,15 @@ export async function syncLocalTagsToSupabase(): Promise<{ count: number; error?
 export async function saveCharacterTag(tag: Partial<CharacterTagRecord>): Promise<CharacterTagRecord> {
   const now = new Date().toISOString();
   const name = String(tag.name || '').trim();
-  const slug = name.toLowerCase();
-  const id = tag.id || `tag_${slug.replace(/[^a-z0-9]/g, '_')}_${Date.now()}`;
+  const normalizedSlug = name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  const slug = normalizedSlug || 'tag';
+  const id = tag.id || `tag_${slug}_${Date.now()}`;
 
   const record: CharacterTagRecord = {
     id,
@@ -228,28 +291,29 @@ export async function saveCharacterTag(tag: Partial<CharacterTagRecord>): Promis
     updated_at: now,
   };
 
+  // Verify server-side Admin permission
+  const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
+  if (!isAuthorized) {
+    throw new Error('Từ chối truy cập: Bạn chưa đăng nhập hoặc không có quyền Quản trị viên để tạo hoặc chỉnh sửa Tag.');
+  }
+
+  // 1. Primary Save to Cloud Firestore
+  try {
+    await setDoc(doc(db, CHARACTER_TAGS_COLLECTION, record.id), record);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `${CHARACTER_TAGS_COLLECTION}/${record.id}`);
+  }
+
+  // 2. Dual-sync to Supabase if available
   const client = getSupabaseClient();
   if (client) {
-    let savedToSupabase = false;
-    // 1. Try secure RPC
     try {
-      const { data: rpcRes, error: rpcErr } = await client.rpc('upsert_character_tag', { p_tag: record });
-      if (!rpcErr && rpcRes && rpcRes.success !== false) {
-        savedToSupabase = true;
-      } else if (rpcErr) {
-        console.warn('RPC upsert_character_tag notice, trying direct upsert:', rpcErr.message);
+      const { error: rpcErr } = await client.rpc('upsert_character_tag', { p_tag: record });
+      if (rpcErr) {
+        await client.from('character_tags').upsert(record);
       }
     } catch (rpcEx) {
-      console.warn('RPC upsert_character_tag execution exception:', rpcEx);
-    }
-
-    // 2. Direct upsert fallback
-    if (!savedToSupabase) {
-      const { error: directErr } = await client.from('character_tags').upsert(record);
-      if (directErr) {
-        console.error('Failed to upsert tag into Supabase character_tags:', directErr);
-        throw new Error(`Lỗi lưu Tag vào Supabase: ${directErr.message}`);
-      }
+      console.warn('Supabase tag dual-sync notice:', rpcEx);
     }
   }
 
@@ -262,6 +326,7 @@ export async function saveCharacterTag(tag: Partial<CharacterTagRecord>): Promis
     current.push(record);
   }
   setLocal(STORAGE_TAGS, current);
+
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('pca_tags_updated'));
   }
@@ -275,9 +340,21 @@ export async function deleteCharacterTag(
   allCharacters: Character[],
   onSave?: (char: Character) => Promise<any>
 ): Promise<void> {
+  const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
+  if (!isAuthorized) {
+    throw new Error('Từ chối truy cập: Bạn chưa đăng nhập hoặc không có quyền Quản trị viên để xóa Tag.');
+  }
+
   const targetLower = tagName.toLowerCase().trim();
 
-  // 1. Unlink from Supabase
+  // 1. Unlink from Cloud Firestore
+  try {
+    await deleteDoc(doc(db, CHARACTER_TAGS_COLLECTION, tagId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `${CHARACTER_TAGS_COLLECTION}/${tagId}`);
+  }
+
+  // 2. Unlink from Supabase if connected
   const client = getSupabaseClient();
   if (client) {
     try {

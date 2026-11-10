@@ -60,6 +60,14 @@ service cloud.firestore {
       allow delete: if isAdmin() && isValidId(characterId);
     }
 
+    // Character Tags Collection
+    // Public visitors can read, only verified administrators can write
+    match /character_tags/{tagId} {
+      allow get: if isValidId(tagId);
+      allow list: if true;
+      allow create, update, delete: if isAdmin() && isValidId(tagId);
+    }
+
     // Settings Collection (Site Content, Custom Copy & Music Settings)
     // Public visitors can read, only verified administrators can write
     match /settings/{settingId} {
