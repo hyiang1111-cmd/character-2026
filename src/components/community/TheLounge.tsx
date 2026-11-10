@@ -22,7 +22,8 @@ import {
   sendLoungeMessage,
   toggleLikeLoungeMessage,
   deleteLoungeMessage,
-  getUserBadges
+  getUserBadges,
+  getLoungeMessages
 } from '../../services/communityStorage';
 import { UserBadge, LoungeMessage, SYSTEM_BADGES } from '../../services/supabase';
 import { RankEmblem } from './RankEmblem';
@@ -40,34 +41,97 @@ export const TheLounge: React.FC<TheLoungeProps> = ({ onOpenAuth, onShowToast })
   const [inputText, setInputText] = useState('');
   const [replyTarget, setReplyTarget] = useState<LoungeMessage | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [hasMoreOlder, setHasMoreOlder] = useState(true);
   const [userBadgesMap, setUserBadgesMap] = useState<Record<string, UserBadge[]>>({});
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+
+  // Helper to deduplicate messages by ID and maintain chronological order (oldest -> newest)
+  const dedupeAndSortMessages = (list: LoungeMessage[]) => {
+    const map = new Map<string, LoungeMessage>();
+    for (const m of list) {
+      if (!m.is_deleted) {
+        map.set(m.id, m);
+      }
+    }
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+  };
 
   // Subscribe to real-time chat messages
   useEffect(() => {
-    const unsub = subscribeToLoungeMessages((latest) => {
-      setMessages(latest);
+    setIsInitialLoading(true);
 
-      // Fetch badges for authors in latest messages
-      const authorIds = Array.from(new Set(latest.map((m) => m.user_id)));
-      authorIds.forEach(async (uId) => {
-        if (!userBadgesMap[uId]) {
-          const uBadges = await getUserBadges(uId);
-          setUserBadgesMap((prev) => ({ ...prev, [uId]: uBadges }));
-        }
-      });
-    });
+    const unsub = subscribeToLoungeMessages(
+      (latest) => {
+        setMessages((prev) => {
+          // If we have existing paginated older messages, preserve them
+          const latestIds = new Set(latest.map((m) => m.id));
+          const oldestLatestTime = latest[0] ? new Date(latest[0].created_at).getTime() : 0;
+          const olderUnique = prev.filter(
+            (p) => !latestIds.has(p.id) && new Date(p.created_at).getTime() < oldestLatestTime
+          );
+          return dedupeAndSortMessages([...olderUnique, ...latest]);
+        });
+        setIsInitialLoading(false);
+
+        // Fetch badges for authors in latest messages
+        const authorIds = Array.from(new Set(latest.map((m) => m.user_id)));
+        authorIds.forEach(async (uId) => {
+          if (!userBadgesMap[uId]) {
+            const uBadges = await getUserBadges(uId);
+            setUserBadgesMap((prev) => ({ ...prev, [uId]: uBadges }));
+          }
+        });
+      },
+      (_newMsg) => {
+        // On new incoming realtime message, scroll gently to bottom
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 50);
+      }
+    );
 
     return () => {
       unsub();
     };
-  }, []);
+  }, [isSupabaseConnected]);
 
-  // Auto-scroll to bottom on initial load or new message
+  // Initial scroll to bottom once messages arrive
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length]);
+    if (!isLoadingOlder && messages.length > 0) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages.length, isLoadingOlder]);
+
+  // Load older messages (Pagination / Infinite Scroll upward)
+  const handleLoadOlder = async () => {
+    if (messages.length === 0 || isLoadingOlder || !hasMoreOlder) return;
+
+    setIsLoadingOlder(true);
+    try {
+      const oldestMsgTime = messages[0]?.created_at;
+      const older = await getLoungeMessages(30, oldestMsgTime);
+
+      if (older.length > 0) {
+        setMessages((prev) => dedupeAndSortMessages([...older, ...prev]));
+        if (older.length < 30) {
+          setHasMoreOlder(false);
+        }
+      } else {
+        setHasMoreOlder(false);
+        onShowToast('info', 'Lịch sử chat', 'Đã tải hết toàn bộ tin nhắn cũ.');
+      }
+    } catch (e: any) {
+      onShowToast('error', 'Lỗi tải tin nhắn cũ', e?.message);
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,13 +140,14 @@ export const TheLounge: React.FC<TheLoungeProps> = ({ onOpenAuth, onShowToast })
       return;
     }
 
-    if (!inputText.trim()) return;
+    const text = inputText.trim();
+    if (!text) return;
 
     setIsSending(true);
     try {
       const { message, newBadgesEarned, error } = await sendLoungeMessage(
         member,
-        inputText,
+        text,
         replyTarget
           ? { id: replyTarget.id, username: replyTarget.username, content: replyTarget.content }
           : undefined
@@ -90,9 +155,16 @@ export const TheLounge: React.FC<TheLoungeProps> = ({ onOpenAuth, onShowToast })
 
       if (error) {
         onShowToast('error', 'Gửi tin nhắn thất bại', error);
-      } else {
+      } else if (message) {
         setInputText('');
         setReplyTarget(null);
+
+        // Optimistically append message with anti-duplication
+        setMessages((prev) => dedupeAndSortMessages([...prev, message]));
+
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 30);
 
         // Notify if new badges earned from message milestone!
         if (newBadgesEarned.length > 0) {
@@ -127,7 +199,8 @@ export const TheLounge: React.FC<TheLoungeProps> = ({ onOpenAuth, onShowToast })
     const confirmDelete = window.confirm('Bạn có chắc muốn xóa tin nhắn này?');
     if (!confirmDelete) return;
 
-    await deleteLoungeMessage(msg.id);
+    await deleteLoungeMessage(msg.id, member?.id);
+    setMessages((prev) => prev.filter((m) => m.id !== msg.id));
     onShowToast('info', 'Đã xóa tin nhắn');
   };
 
@@ -164,8 +237,28 @@ export const TheLounge: React.FC<TheLoungeProps> = ({ onOpenAuth, onShowToast })
       {/* Main Chat Box Container */}
       <div className="bg-white rounded-3xl border-2 border-[#E8D7F7] shadow-xl overflow-hidden flex flex-col h-[620px]">
         {/* Messages Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-gradient-to-b from-[#FFF5F7]/30 to-[#FAF6FC]/30">
-          {messages.length === 0 ? (
+        <div ref={scrollAreaRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-gradient-to-b from-[#FFF5F7]/30 to-[#FAF6FC]/30">
+          {/* Load Older Messages Pagination Button */}
+          {messages.length > 0 && hasMoreOlder && (
+            <div className="flex justify-center pt-1 pb-2">
+              <button
+                type="button"
+                onClick={handleLoadOlder}
+                disabled={isLoadingOlder}
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold bg-white border border-[#E8D7F7] text-[#865B9E] hover:bg-[#FAF6FC] shadow-2xs hover:shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoadingOlder ? 'animate-spin' : ''}`} />
+                <span>{isLoadingOlder ? 'Đang tải tin nhắn cũ...' : 'Tải thêm tin nhắn cũ'}</span>
+              </button>
+            </div>
+          )}
+
+          {isInitialLoading && messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-center space-y-3 p-6 text-[#8E7A84]">
+              <div className="w-12 h-12 rounded-full border-3 border-[#865B9E]/30 border-t-[#865B9E] animate-spin" />
+              <p className="text-xs text-[#8E7A84]">Đang tải lịch sử tin nhắn phòng chat...</p>
+            </div>
+          ) : messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center space-y-3 p-6 text-[#8E7A84]">
               <div className="w-14 h-14 rounded-full bg-white flex items-center justify-center text-[#865B9E] border border-[#E8D7F7] shadow-xs">
                 <Sparkles className="w-7 h-7" />

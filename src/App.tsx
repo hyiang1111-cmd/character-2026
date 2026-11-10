@@ -103,19 +103,23 @@ function AppContent() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Load site content, characters, and tags
+  // Load site content, characters, and tags sequentially to ensure Supabase credentials initialize first
   const refreshData = async () => {
     try {
-      const [fetchedChars, fetchedSite, fetchedTags] = await Promise.all([
-        getCharacters(isAdmin),
-        getSiteContent(),
-        getCharacterTags(),
-      ]);
-      setCharacters(fetchedChars);
+      // 1. Load site settings first to get central Supabase URL/Key if present
+      const fetchedSite = await getSiteContent();
       setSiteContent(fetchedSite);
+
       if (fetchedSite?.supabaseUrl || fetchedSite?.supabaseAnonKey) {
         setSharedSupabaseCredentials(fetchedSite.supabaseUrl, fetchedSite.supabaseAnonKey);
       }
+
+      // 2. Load characters and tags with Supabase fully initialized
+      const [fetchedChars, fetchedTags] = await Promise.all([
+        getCharacters(isAdmin),
+        getCharacterTags(),
+      ]);
+      setCharacters(fetchedChars);
       setCustomTags(fetchedTags);
     } catch (err) {
       console.error('Failed to load archive data:', err);
@@ -134,6 +138,8 @@ function AppContent() {
 
   // Realtime Character Tags synchronization across Admin and Public views
   useEffect(() => {
+    let activeChannel: any = null;
+
     const handleTagsUpdated = async () => {
       try {
         const latestTags = await getCharacterTags();
@@ -143,34 +149,47 @@ function AppContent() {
       }
     };
 
+    const subscribeToTagsChannel = () => {
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          if (activeChannel) {
+            client.removeChannel(activeChannel);
+            activeChannel = null;
+          }
+
+          activeChannel = client
+            .channel('realtime:public_tags_live')
+            .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'character_tags' },
+              () => {
+                handleTagsUpdated();
+              }
+            )
+            .subscribe();
+        } catch (err) {
+          console.warn('Realtime tag channel warning:', err);
+        }
+      }
+    };
+
     window.addEventListener('pca_tags_updated', handleTagsUpdated);
     window.addEventListener('storage', handleTagsUpdated);
+    window.addEventListener('pca_supabase_credentials_changed', () => {
+      subscribeToTagsChannel();
+      handleTagsUpdated();
+    });
 
-    // Subscribe to Supabase Realtime channel for live tag updates if configured
-    const client = getSupabaseClient();
-    let channel: any = null;
-    if (client) {
-      try {
-        channel = client
-          .channel('realtime:public_tags_live')
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'character_tags' },
-            () => {
-              handleTagsUpdated();
-            }
-          )
-          .subscribe();
-      } catch (err) {
-        console.warn('Realtime tag channel warning:', err);
-      }
-    }
+    subscribeToTagsChannel();
 
     return () => {
       window.removeEventListener('pca_tags_updated', handleTagsUpdated);
       window.removeEventListener('storage', handleTagsUpdated);
-      if (client && channel) {
-        client.removeChannel(channel);
+      window.removeEventListener('pca_supabase_credentials_changed', subscribeToTagsChannel);
+      const client = getSupabaseClient();
+      if (client && activeChannel) {
+        client.removeChannel(activeChannel);
       }
     };
   }, []);

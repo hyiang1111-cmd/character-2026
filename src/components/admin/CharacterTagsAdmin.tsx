@@ -14,7 +14,8 @@ import {
   Sparkles,
   Layers,
   ArrowUpDown,
-  Filter
+  Filter,
+  RefreshCw
 } from 'lucide-react';
 import { Character } from '../../types/character';
 import {
@@ -25,6 +26,7 @@ import {
   renameCharacterTag,
   bulkAssignTagToCharacters,
   bulkUnassignTagFromCharacters,
+  syncLocalTagsToSupabase,
 } from '../../services/characterRankingStorage';
 import { saveCharacter } from '../../services/storage';
 
@@ -81,6 +83,7 @@ export const CharacterTagsAdmin: React.FC<CharacterTagsAdminProps> = ({
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>([]);
   const [charSearchQuery, setCharSearchQuery] = useState('');
   const [bulkMode, setBulkMode] = useState<'assign' | 'unassign'>('assign');
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Load tags
   const loadTags = async () => {
@@ -92,6 +95,24 @@ export const CharacterTagsAdmin: React.FC<CharacterTagsAdminProps> = ({
       // Fallback
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const { count, error } = await syncLocalTagsToSupabase();
+      if (error) {
+        onShowToast('error', 'Lỗi đồng bộ Supabase', error);
+      } else {
+        onShowToast('success', 'Đồng bộ Supabase thành công', `Đã đồng bộ ${count} Tag lên cơ sở dữ liệu Supabase.`);
+        await loadTags();
+        onRefreshData();
+      }
+    } catch (e: any) {
+      onShowToast('error', 'Lỗi đồng bộ', e?.message);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -365,6 +386,18 @@ export const CharacterTagsAdmin: React.FC<CharacterTagsAdminProps> = ({
           </div>
 
           <button
+            type="button"
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            title="Đồng bộ toàn bộ Tag lên Supabase để hiển thị đầy đủ trên Production Vercel"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-[#FAF6FC] border border-[#E8D7F7] text-[#865B9E] hover:bg-[#F3E8FA] text-xs font-semibold shadow-2xs hover:shadow-xs transition-all shrink-0 cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>{isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ Supabase'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleOpenCreate}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white text-xs font-bold hover:brightness-105 active:scale-95 transition-all shadow-sm shrink-0 cursor-pointer"
           >

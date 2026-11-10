@@ -805,21 +805,91 @@ export async function getAllMemberProfiles(): Promise<MemberProfile[]> {
 // THE LOUNGE MESSAGES & REALTIME CHAT
 // ==========================================
 
-export async function getLoungeMessages(limitCount: number = 50): Promise<LoungeMessage[]> {
+export async function getLoungeMessages(
+  limitCount: number = 50,
+  beforeCreatedAt?: string
+): Promise<LoungeMessage[]> {
   const client = getSupabaseClient();
   if (client) {
-    const { data } = await client
-      .from('lounge_messages')
-      .select('*')
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: true })
-      .limit(limitCount);
+    try {
+      // 1. Try secure RPC with pagination support
+      const { data: rpcData, error: rpcErr } = await client.rpc('get_lounge_chat_history', {
+        p_limit: limitCount,
+        p_before_created_at: beforeCreatedAt || null,
+      });
 
-    return (data || []) as LoungeMessage[];
-  } else {
-    const messages = getLocal<LoungeMessage[]>(STORAGE_MESSAGES, []);
-    return messages.filter((m) => !m.is_deleted);
+      if (!rpcErr && rpcData) {
+        // RPC orders desc for limit, reverse to asc for chronological chat flow
+        const sorted = [...rpcData].reverse() as LoungeMessage[];
+        if (sorted.length > 0) {
+          return sorted;
+        }
+      }
+
+      // 2. Direct table select fallback
+      let query = client
+        .from('lounge_messages')
+        .select('*')
+        .eq('is_deleted', false);
+
+      if (beforeCreatedAt) {
+        query = query.lt('created_at', beforeCreatedAt);
+      }
+
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(limitCount);
+
+      if (!error && data) {
+        const sorted = [...data].reverse() as LoungeMessage[];
+
+        // If Supabase is currently empty, auto-migrate any existing local messages
+        if (sorted.length === 0 && !beforeCreatedAt) {
+          const localMsgs = getLocal<LoungeMessage[]>(STORAGE_MESSAGES, []).filter((m) => !m.is_deleted);
+          if (localMsgs.length > 0) {
+            console.log(`Auto-migrating ${localMsgs.length} local lounge messages to Supabase...`);
+            for (const lm of localMsgs) {
+              try {
+                await client.rpc('send_lounge_chat_message', {
+                  p_user_id: lm.user_id,
+                  p_username: lm.username,
+                  p_avatar_url: lm.avatar_url,
+                  p_vip_tier: lm.vip_tier || 'none',
+                  p_content: lm.content,
+                  p_reply_to_id: lm.reply_to_id || null,
+                  p_reply_to_username: lm.reply_to_username || null,
+                  p_reply_to_content: lm.reply_to_content || null,
+                });
+              } catch {
+                // Ignore individual migration error
+              }
+            }
+
+            const { data: refetched } = await client
+              .from('lounge_messages')
+              .select('*')
+              .eq('is_deleted', false)
+              .order('created_at', { ascending: true })
+              .limit(limitCount);
+
+            if (refetched && refetched.length > 0) {
+              return refetched as LoungeMessage[];
+            }
+          }
+        }
+
+        return sorted;
+      } else if (error) {
+        console.warn('Supabase getLoungeMessages notice:', error.message);
+      }
+    } catch (e) {
+      console.warn('Failed to load lounge messages from Supabase:', e);
+    }
   }
+
+  // Fallback to local storage
+  const messages = getLocal<LoungeMessage[]>(STORAGE_MESSAGES, []);
+  return messages.filter((m) => !m.is_deleted);
 }
 
 const userLastMessageTimes: Record<string, number> = {};
@@ -860,27 +930,63 @@ export async function sendLoungeMessage(
     likes_count: 0,
     liked_by_users: [],
     is_deleted: false,
+    status: 'sent',
     created_at: new Date().toISOString(),
   };
 
   let createdMessage = msgPayload;
 
   if (client) {
-    const { data, error } = await client
-      .from('lounge_messages')
-      .insert([msgPayload])
-      .select()
-      .single();
+    let sentSuccess = false;
 
-    if (error) {
-      return { message: null as any, newBadgesEarned: [], error: error.message };
+    // 1. Try secure RPC send_lounge_chat_message
+    try {
+      const { data: rpcRes, error: rpcErr } = await client.rpc('send_lounge_chat_message', {
+        p_user_id: user.id,
+        p_username: user.username,
+        p_avatar_url: user.avatar_url,
+        p_vip_tier: user.vip_tier || 'none',
+        p_content: cleanContent,
+        p_reply_to_id: replyTo?.id || null,
+        p_reply_to_username: replyTo?.username || null,
+        p_reply_to_content: replyTo?.content || null,
+      });
+
+      if (!rpcErr && rpcRes && rpcRes.success && rpcRes.message) {
+        createdMessage = rpcRes.message as LoungeMessage;
+        sentSuccess = true;
+      } else if (rpcErr) {
+        console.warn('RPC send_lounge_chat_message notice, trying direct insert:', rpcErr.message);
+      }
+    } catch (rpcEx) {
+      console.warn('RPC send_lounge_chat_message exception:', rpcEx);
     }
-    createdMessage = data as LoungeMessage;
 
-    const updatedCount = (user.messages_count || 0) + 1;
-    await client.from('profiles').update({ messages_count: updatedCount }).eq('id', user.id);
-    user.messages_count = updatedCount;
+    // 2. Direct table insert fallback
+    if (!sentSuccess) {
+      const { data, error } = await client
+        .from('lounge_messages')
+        .insert([msgPayload])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Direct insert to lounge_messages failed:', error);
+        return { message: null as any, newBadgesEarned: [], error: `Lỗi lưu tin nhắn vào database: ${error.message}` };
+      }
+      createdMessage = data as LoungeMessage;
+      sentSuccess = true;
+
+      const updatedCount = (user.messages_count || 0) + 1;
+      try {
+        await client.from('profiles').update({ messages_count: updatedCount }).eq('id', user.id);
+      } catch {
+        // Ignore
+      }
+      user.messages_count = updatedCount;
+    }
   } else {
+    // Local fallback
     const messages = getLocal<LoungeMessage[]>(STORAGE_MESSAGES, []);
     messages.push(msgPayload);
     setLocal(STORAGE_MESSAGES, messages);
@@ -905,6 +1011,21 @@ export async function toggleLikeLoungeMessage(
   const client = getSupabaseClient();
 
   if (client) {
+    // 1. Try secure RPC
+    try {
+      const { data: rpcRes, error: rpcErr } = await client.rpc('toggle_like_lounge_chat_message', {
+        p_message_id: messageId,
+        p_user_id: userId,
+      });
+
+      if (!rpcErr && rpcRes && rpcRes.success) {
+        return { likes_count: rpcRes.likes_count, liked: rpcRes.liked };
+      }
+    } catch (rpcEx) {
+      console.warn('RPC toggle_like_lounge_chat_message notice:', rpcEx);
+    }
+
+    // 2. Direct fallback
     const { data: msg } = await client.from('lounge_messages').select('*').eq('id', messageId).single();
     if (!msg) return { likes_count: 0, liked: false };
 
@@ -935,10 +1056,21 @@ export async function toggleLikeLoungeMessage(
   }
 }
 
-export async function deleteLoungeMessage(messageId: string): Promise<void> {
+export async function deleteLoungeMessage(messageId: string, requesterId?: string): Promise<void> {
   const client = getSupabaseClient();
   if (client) {
-    await client.from('lounge_messages').update({ is_deleted: true }).eq('id', messageId);
+    try {
+      if (requesterId) {
+        const { error: rpcErr } = await client.rpc('delete_lounge_chat_message', {
+          p_message_id: messageId,
+          p_requester_id: requesterId,
+        });
+        if (!rpcErr) return;
+      }
+      await client.from('lounge_messages').update({ is_deleted: true }).eq('id', messageId);
+    } catch (e) {
+      console.warn('Delete lounge message error:', e);
+    }
   } else {
     const messages = getLocal<LoungeMessage[]>(STORAGE_MESSAGES, []);
     const idx = messages.findIndex((m) => m.id === messageId);
@@ -949,44 +1081,116 @@ export async function deleteLoungeMessage(messageId: string): Promise<void> {
   }
 }
 
-export function subscribeToLoungeMessages(callback: (messages: LoungeMessage[]) => void): () => void {
-  const client = getSupabaseClient();
+export function subscribeToLoungeMessages(
+  callback: (messages: LoungeMessage[]) => void,
+  onNewIncomingMessage?: (msg: LoungeMessage) => void
+): () => void {
+  let isCleanedUp = false;
+  let activeChannel: any = null;
+  let localInterval: any = null;
 
-  if (client) {
-    getLoungeMessages(100).then(callback);
+  const connect = async () => {
+    if (isCleanedUp) return;
 
-    const channel = client
-      .channel('public:lounge_messages')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'lounge_messages' },
-        async () => {
-          const fresh = await getLoungeMessages(100);
-          callback(fresh);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      client.removeChannel(channel);
-    };
-  } else {
-    const fetchLocal = () => callback(getLocal<LoungeMessage[]>(STORAGE_MESSAGES, []).filter((m) => !m.is_deleted));
-    fetchLocal();
-
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_MESSAGES) {
-        fetchLocal();
+    const client = getSupabaseClient();
+    if (client) {
+      // Clean up previous local polling if any
+      if (localInterval) {
+        clearInterval(localInterval);
+        localInterval = null;
       }
-    };
-    window.addEventListener('storage', handleStorage);
-    const interval = setInterval(fetchLocal, 2500);
 
-    return () => {
-      window.removeEventListener('storage', handleStorage);
-      clearInterval(interval);
-    };
+      // Initial load from Supabase
+      const initial = await getLoungeMessages(60);
+      if (!isCleanedUp) {
+        callback(initial);
+      }
+
+      // Supabase Realtime channel
+      try {
+        activeChannel = client
+          .channel('realtime:lounge_messages_stream')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'lounge_messages' },
+            async (payload: any) => {
+              if (isCleanedUp) return;
+
+              if (payload.eventType === 'INSERT' && payload.new && !payload.new.is_deleted) {
+                if (onNewIncomingMessage) {
+                  onNewIncomingMessage(payload.new as LoungeMessage);
+                }
+              }
+
+              // Refresh full latest window to keep all likes/deletions accurately in sync
+              const fresh = await getLoungeMessages(60);
+              if (!isCleanedUp) {
+                callback(fresh);
+              }
+            }
+          )
+          .subscribe();
+      } catch (subErr) {
+        console.warn('Lounge Realtime subscription notice:', subErr);
+      }
+    } else {
+      // Local fallback
+      const fetchLocal = () => {
+        if (isCleanedUp) return;
+        callback(getLocal<LoungeMessage[]>(STORAGE_MESSAGES, []).filter((m) => !m.is_deleted));
+      };
+      fetchLocal();
+
+      const handleStorage = (e: StorageEvent) => {
+        if (e.key === STORAGE_MESSAGES) {
+          fetchLocal();
+        }
+      };
+      window.addEventListener('storage', handleStorage);
+      localInterval = setInterval(fetchLocal, 2500);
+
+      return () => {
+        window.removeEventListener('storage', handleStorage);
+        if (localInterval) clearInterval(localInterval);
+      };
+    }
+  };
+
+  connect();
+
+  // Listen for Supabase credentials becoming available dynamically
+  const handleCredsChanged = () => {
+    if (activeChannel) {
+      const client = getSupabaseClient();
+      if (client) {
+        client.removeChannel(activeChannel);
+      }
+      activeChannel = null;
+    }
+    connect();
+  };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pca_supabase_credentials_changed', handleCredsChanged);
   }
+
+  return () => {
+    isCleanedUp = true;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('pca_supabase_credentials_changed', handleCredsChanged);
+    }
+    if (localInterval) {
+      clearInterval(localInterval);
+      localInterval = null;
+    }
+    if (activeChannel) {
+      const client = getSupabaseClient();
+      if (client) {
+        client.removeChannel(activeChannel);
+      }
+      activeChannel = null;
+    }
+  };
 }
 
 // ==========================================

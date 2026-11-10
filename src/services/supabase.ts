@@ -9,28 +9,39 @@ let sharedSupabaseUrl = '';
 let sharedSupabaseAnonKey = '';
 
 export function setSharedSupabaseCredentials(url?: string, anonKey?: string) {
-  if (url && url.trim()) sharedSupabaseUrl = url.trim();
-  if (anonKey && anonKey.trim()) sharedSupabaseAnonKey = anonKey.trim();
-  if (url || anonKey) {
+  let changed = false;
+  if (url && url.trim() && url.trim() !== sharedSupabaseUrl) {
+    sharedSupabaseUrl = url.trim();
+    changed = true;
+  }
+  if (anonKey && anonKey.trim() && anonKey.trim() !== sharedSupabaseAnonKey) {
+    sharedSupabaseAnonKey = anonKey.trim();
+    changed = true;
+  }
+  if (changed || url || anonKey) {
     supabaseInstance = null; // force re-evaluation of client
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pca_supabase_credentials_changed'));
+    }
   }
 }
 
 // Get active Supabase configuration (from env vars, central site settings, or local overrides)
 export function getSupabaseCredentials() {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  const envUrl = (import.meta.env.VITE_SUPABASE_URL || '').trim();
+  const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
 
   let localUrl = '';
   let localKey = '';
 
   if (typeof window !== 'undefined') {
-    localUrl = localStorage.getItem(SUPABASE_URL_KEY) || '';
-    localKey = localStorage.getItem(SUPABASE_ANON_KEY) || '';
+    localUrl = (localStorage.getItem(SUPABASE_URL_KEY) || '').trim();
+    localKey = (localStorage.getItem(SUPABASE_ANON_KEY) || '').trim();
   }
 
-  const url = (sharedSupabaseUrl || localUrl || envUrl || '').trim();
-  const anonKey = (sharedSupabaseAnonKey || localKey || envKey || '').trim();
+  // Priority: 1. Environment variables (Vercel) -> 2. Central shared settings (Firestore) -> 3. Local browser override
+  const url = (envUrl || sharedSupabaseUrl || localUrl || '').trim();
+  const anonKey = (envKey || sharedSupabaseAnonKey || localKey || '').trim();
 
   return { url, anonKey };
 }
@@ -73,6 +84,9 @@ export function saveSupabaseCredentials(url: string, anonKey: string) {
   }
   setSharedSupabaseCredentials(url, anonKey);
   supabaseInstance = null; // reset instance so next get re-evaluates
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('pca_supabase_credentials_changed'));
+  }
 }
 
 export function isSupabaseConfigured(): boolean {
@@ -223,7 +237,9 @@ export interface LoungeMessage {
   likes_count: number;
   liked_by_users: string[];
   is_deleted: boolean;
+  status?: string;
   created_at: string;
+  updated_at?: string;
   badges?: Badge[];
 }
 

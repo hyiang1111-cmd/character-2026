@@ -130,14 +130,83 @@ export async function getCharacterTags(): Promise<CharacterTagRecord[]> {
         .select('*')
         .order('sort_order', { ascending: true })
         .order('name', { ascending: true });
+
       if (!error && data) {
-        return data as CharacterTagRecord[];
+        // If Supabase returned records, update local cache so it matches database
+        if (data.length > 0) {
+          setLocal(STORAGE_TAGS, data);
+          return data as CharacterTagRecord[];
+        }
+
+        // If Supabase is connected but empty, check if Admin has local tags to auto-migrate!
+        const localTags = getLocal<CharacterTagRecord[]>(STORAGE_TAGS, []);
+        if (localTags.length > 0) {
+          console.log(`Auto-migrating ${localTags.length} local tags to Supabase...`);
+          for (const lt of localTags) {
+            try {
+              const { error: rpcErr } = await client.rpc('upsert_character_tag', { p_tag: lt });
+              if (rpcErr) {
+                await client.from('character_tags').upsert(lt);
+              }
+            } catch (syncErr) {
+              console.warn('Tag auto-migrate item notice:', syncErr);
+            }
+          }
+
+          // Re-fetch from Supabase to confirm
+          const { data: refetched } = await client
+            .from('character_tags')
+            .select('*')
+            .order('sort_order', { ascending: true })
+            .order('name', { ascending: true });
+
+          if (refetched && refetched.length > 0) {
+            setLocal(STORAGE_TAGS, refetched);
+            return refetched as CharacterTagRecord[];
+          }
+        }
+
+        return [];
+      } else if (error) {
+        console.warn('Supabase character_tags query notice:', error.message);
       }
-    } catch {
-      // Fallback to local
+    } catch (e) {
+      console.warn('Failed to load character tags from Supabase:', e);
     }
   }
   return getLocal<CharacterTagRecord[]>(STORAGE_TAGS, []);
+}
+
+export async function syncLocalTagsToSupabase(): Promise<{ count: number; error?: string }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { count: 0, error: 'Chưa kết nối Supabase. Vui lòng kiểm tra cấu hình Supabase URL và Anon Key.' };
+  }
+
+  const localTags = getLocal<CharacterTagRecord[]>(STORAGE_TAGS, []);
+  if (localTags.length === 0) {
+    return { count: 0 };
+  }
+
+  let migratedCount = 0;
+  for (const t of localTags) {
+    try {
+      const { error: rpcErr } = await client.rpc('upsert_character_tag', { p_tag: t });
+      if (!rpcErr) {
+        migratedCount++;
+      } else {
+        const { error: directErr } = await client.from('character_tags').upsert(t);
+        if (!directErr) migratedCount++;
+      }
+    } catch (e) {
+      console.warn('Tag manual sync notice:', e);
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('pca_tags_updated'));
+  }
+  return { count: migratedCount };
 }
 
 export async function saveCharacterTag(tag: Partial<CharacterTagRecord>): Promise<CharacterTagRecord> {
@@ -161,14 +230,30 @@ export async function saveCharacterTag(tag: Partial<CharacterTagRecord>): Promis
 
   const client = getSupabaseClient();
   if (client) {
+    let savedToSupabase = false;
+    // 1. Try secure RPC
     try {
-      await client.from('character_tags').upsert(record);
-    } catch (e) {
-      console.warn('Failed to upsert tag in Supabase:', e);
+      const { data: rpcRes, error: rpcErr } = await client.rpc('upsert_character_tag', { p_tag: record });
+      if (!rpcErr && rpcRes && rpcRes.success !== false) {
+        savedToSupabase = true;
+      } else if (rpcErr) {
+        console.warn('RPC upsert_character_tag notice, trying direct upsert:', rpcErr.message);
+      }
+    } catch (rpcEx) {
+      console.warn('RPC upsert_character_tag execution exception:', rpcEx);
+    }
+
+    // 2. Direct upsert fallback
+    if (!savedToSupabase) {
+      const { error: directErr } = await client.from('character_tags').upsert(record);
+      if (directErr) {
+        console.error('Failed to upsert tag into Supabase character_tags:', directErr);
+        throw new Error(`Lỗi lưu Tag vào Supabase: ${directErr.message}`);
+      }
     }
   }
 
-  // Update local
+  // Update local cache
   const current = getLocal<CharacterTagRecord[]>(STORAGE_TAGS, []);
   const existingIdx = current.findIndex((t) => t.id === record.id || t.slug === record.slug);
   if (existingIdx >= 0) {
@@ -196,7 +281,10 @@ export async function deleteCharacterTag(
   const client = getSupabaseClient();
   if (client) {
     try {
-      await client.from('character_tags').delete().eq('id', tagId);
+      const { error: rpcErr } = await client.rpc('delete_character_tag', { p_id: tagId });
+      if (rpcErr) {
+        await client.from('character_tags').delete().eq('id', tagId);
+      }
     } catch (e) {
       console.warn('Failed to delete tag in Supabase:', e);
     }

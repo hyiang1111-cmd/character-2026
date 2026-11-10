@@ -2284,16 +2284,16 @@ export const CommunityAdmin: React.FC<CommunityAdminProps> = ({ onShowToast }) =
             {/* SQL Snippet */}
             <div className="mt-6 space-y-2">
               <div className="flex items-center justify-between">
-                <h4 className="font-bold text-sm text-[#51434A]">SQL Migration Cho BXH Hoạt Động & Character Tags</h4>
-                <span className="text-[10px] text-[#865B9E] font-mono">File: supabase-leaderboard-migration.sql</span>
+                <h4 className="font-bold text-sm text-[#51434A]">SQL Migration Cho Chat (The Lounge), Tags & BXH</h4>
+                <span className="text-[10px] text-[#865B9E] font-mono">File: supabase-community-chat-and-tags-fix.sql</span>
               </div>
               <pre className="p-4 rounded-2xl bg-gray-900 text-purple-200 font-mono text-[11px] overflow-x-auto leading-relaxed">
-{`-- Xem và chạy toàn bộ mã SQL hoàn chỉnh trong file 'supabase-leaderboard-migration.sql':
--- 1. Bổ sung bảng user_activity_heartbeats & character_chat_interactions
--- 2. Khởi tạo RPC record_activity_heartbeat (chống spam nhiều tab, chống treo AFK)
--- 3. Khởi tạo RPC record_character_chat_interaction (chống spam click)
--- 4. Tạo view public.public_leaderboard_view sắp xếp theo active_time_seconds
--- 5. Cấp quyền SELECT public cho bảng character_tags để khách vãng lai xem được toàn bộ tag.`}
+{`-- Chạy file 'supabase-community-chat-and-tags-fix.sql' trong Supabase SQL Editor:
+-- 1. Lưu trữ tin nhắn The Lounge vĩnh viễn (text ID, UTC timestamp, anti-duplicate)
+-- 2. Khởi tạo RPC send_lounge_chat_message & Realtime WebSocket đồng bộ tin nhắn
+-- 3. Khởi tạo RPC upsert_character_tag & delete_character_tag cho Admin
+-- 4. Bật Supabase Realtime cho bảng lounge_messages & character_tags
+-- 5. Cho phép khách vãng lai và thành viên đọc dữ liệu công khai trên Vercel Production.`}
               </pre>
             </div>
           </div>
