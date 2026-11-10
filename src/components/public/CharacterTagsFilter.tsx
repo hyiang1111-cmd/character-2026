@@ -67,13 +67,23 @@ export const CharacterTagsFilter: React.FC<CharacterTagsFilterProps> = ({
         {/* Dynamic Character Tags */}
         {tags.map((tag) => {
           const isSelected = selectedTag === tag.key;
+          const hasCustomColor = Boolean(tag.color && tag.color.startsWith('#'));
 
           return (
             <button
               key={tag.key}
               type="button"
               onClick={() => handleTagClick(tag.key)}
-              style={isSelected && tag.color ? { backgroundColor: tag.color } : {}}
+              style={
+                isSelected && hasCustomColor
+                  ? { backgroundColor: tag.color, borderColor: tag.color }
+                  : !isSelected && hasCustomColor
+                  ? {
+                      borderColor: `${tag.color}60`,
+                      backgroundColor: `${tag.color}12`,
+                    }
+                  : undefined
+              }
               className={`group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all duration-200 cursor-pointer shadow-2xs select-none ${
                 isSelected
                   ? 'bg-gradient-to-r from-[#865B9E] via-[#A06CA8] to-[#D88CA3] text-white font-semibold shadow-[0_3px_12px_rgba(134,91,158,0.35)] scale-105 ring-2 ring-white/90'
@@ -85,11 +95,24 @@ export const CharacterTagsFilter: React.FC<CharacterTagsFilterProps> = ({
                 <span className="text-xs shrink-0">{tag.icon}</span>
               ) : (
                 <TagIcon
+                  style={!isSelected && hasCustomColor ? { color: tag.color } : undefined}
                   className={`w-3 h-3 ${isSelected ? 'text-white' : 'text-[#A06CA8]/80'}`}
                 />
               )}
-              <span className="font-medium">#{tag.label}</span>
               <span
+                style={!isSelected && hasCustomColor ? { color: tag.color } : undefined}
+                className="font-medium"
+              >
+                #{tag.label}
+              </span>
+              <span
+                style={
+                  isSelected && hasCustomColor
+                    ? { backgroundColor: 'rgba(255,255,255,0.25)', color: '#ffffff' }
+                    : !isSelected && hasCustomColor
+                    ? { backgroundColor: `${tag.color}25`, color: tag.color }
+                    : undefined
+                }
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold transition-colors ${
                   isSelected
                     ? 'bg-white/30 text-white'

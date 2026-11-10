@@ -183,7 +183,7 @@ export interface MemberLeaderboardEntry extends MemberProfile {
 }
 
 export const PUBLIC_LEADERBOARD_COLUMNS =
-  'id, username, avatar_url, bio, vip_tier, is_admin, active_time_seconds, character_chats_count, characters_explored_count, messages_count, total_donated, donation_xu, active_badge_ids, created_at';
+  'id, username, avatar_url, bio, vip_tier, is_admin, active_time_seconds, character_chats_count, characters_explored_count, messages_count, total_donated, donation_xu, active_badge_ids, created_at, is_online, last_heartbeat_at';
 
 export async function getPublicLeaderboardProfiles(): Promise<MemberProfile[]> {
   const client = getSupabaseClient();
@@ -193,7 +193,8 @@ export async function getPublicLeaderboardProfiles(): Promise<MemberProfile[]> {
       const { data: viewData, error: viewError } = await client
         .from('public_leaderboard_view')
         .select(PUBLIC_LEADERBOARD_COLUMNS)
-        .order('created_at', { ascending: false });
+        .order('active_time_seconds', { ascending: false })
+        .order('character_chats_count', { ascending: false });
 
       if (!viewError && Array.isArray(viewData)) {
         return viewData as MemberProfile[];
@@ -202,9 +203,12 @@ export async function getPublicLeaderboardProfiles(): Promise<MemberProfile[]> {
       // 2. Fallback to profiles table selecting strictly safe public columns (never query email)
       const { data, error } = await client
         .from('profiles')
-        .select(PUBLIC_LEADERBOARD_COLUMNS)
+        .select(
+          'id, username, avatar_url, bio, vip_tier, is_admin, active_time_seconds, character_chats_count, characters_explored_count, messages_count, total_donated, donation_xu, active_badge_ids, created_at'
+        )
         .eq('is_banned', false)
-        .order('created_at', { ascending: false });
+        .order('active_time_seconds', { ascending: false })
+        .order('character_chats_count', { ascending: false });
 
       if (error) {
         throw new Error(error.message || 'Lỗi truy vấn dữ liệu bảng xếp hạng từ Supabase.');
@@ -225,15 +229,11 @@ export async function getPublicLeaderboardProfiles(): Promise<MemberProfile[]> {
 export async function getActivityLeaderboard(limitCount: number = 100): Promise<MemberLeaderboardEntry[]> {
   const allProfiles = await getPublicLeaderboardProfiles();
 
-  // Filter only members who have valid recorded activity time or character chats
-  const activeMembers = allProfiles.filter(
-    (p) => (Number(p.active_time_seconds) || 0) > 0 || (Number(p.character_chats_count) || 0) > 0
-  );
-
-  // Primary Sort: active_time_seconds descending
+  // All valid members are eligible.
+  // Primary Sort: accumulated active_time_seconds descending
   // Tie-breaker 1 Sort: character_chats_count descending
-  // Tie-breaker 2 Sort: characters_explored_count descending
-  const sorted = [...activeMembers].sort((a, b) => {
+  // Tie-breaker 2 Sort: account created_at ascending (who joined earliest)
+  const sorted = [...allProfiles].sort((a, b) => {
     const timeA = Number(a.active_time_seconds) || 0;
     const timeB = Number(b.active_time_seconds) || 0;
     if (timeB !== timeA) return timeB - timeA;
@@ -242,9 +242,9 @@ export async function getActivityLeaderboard(limitCount: number = 100): Promise<
     const chatsB = Number(b.character_chats_count) || 0;
     if (chatsB !== chatsA) return chatsB - chatsA;
 
-    const expA = Number(a.characters_explored_count) || 0;
-    const expB = Number(b.characters_explored_count) || 0;
-    return expB - expA;
+    const dateA = new Date(a.created_at || 0).getTime();
+    const dateB = new Date(b.created_at || 0).getTime();
+    return dateA - dateB;
   });
 
   // Attach dynamic activity rank
@@ -299,50 +299,107 @@ export async function getMemberRanksMap(): Promise<Record<string, { activityRank
   return ranksMap;
 }
 
-export async function updateUserActiveTime(userId: string, addedSeconds: number): Promise<void> {
-  if (!userId || addedSeconds <= 0) return;
+export async function updateUserActiveTime(
+  userId: string,
+  addedSeconds: number,
+  sessionId?: string
+): Promise<{ success: boolean; newTotal?: number }> {
+  if (!userId || addedSeconds <= 0) return { success: false };
 
   const client = getSupabaseClient();
   if (client) {
-    const { data: current } = await client
-      .from('profiles')
-      .select('active_time_seconds')
-      .eq('id', userId)
-      .single();
+    try {
+      // 1. Prefer server-authoritative RPC function (enforces rate-limiting, anti-multi-tab, and anti-spam)
+      const { data, error } = await client.rpc('record_activity_heartbeat', {
+        p_user_id: userId,
+        p_session_id: sessionId || 'sess_default',
+        p_seconds: addedSeconds,
+      });
 
-    const newTotal = (current?.active_time_seconds || 0) + addedSeconds;
-    await client.from('profiles').update({ active_time_seconds: newTotal }).eq('id', userId);
-  } else {
-    const profiles = getLocal<MemberProfile[]>(STORAGE_PROFILES, []);
-    const idx = profiles.findIndex((p) => p.id === userId);
-    if (idx !== -1) {
-      profiles[idx].active_time_seconds = (profiles[idx].active_time_seconds || 0) + addedSeconds;
-      setLocal(STORAGE_PROFILES, profiles);
+      if (!error && data && data.success) {
+        return { success: true, newTotal: data.active_time_seconds };
+      }
+
+      if (data && data.reason === 'rate_limited') {
+        // Multi-tab or multi-device rate limited (heartbeat already received in last 25s)
+        return { success: false, newTotal: data.active_time_seconds };
+      }
+
+      // Fallback: direct update if RPC is not yet created in Supabase SQL editor
+      const { data: current } = await client
+        .from('profiles')
+        .select('active_time_seconds')
+        .eq('id', userId)
+        .single();
+
+      const newTotal = (current?.active_time_seconds || 0) + addedSeconds;
+      await client.from('profiles').update({ active_time_seconds: newTotal }).eq('id', userId);
+      return { success: true, newTotal };
+    } catch (err) {
+      console.warn('Supabase active time update error:', err);
     }
   }
+
+  // Local fallback if Supabase not configured
+  const profiles = getLocal<MemberProfile[]>(STORAGE_PROFILES, []);
+  const idx = profiles.findIndex((p) => p.id === userId);
+  if (idx !== -1) {
+    profiles[idx].active_time_seconds = (profiles[idx].active_time_seconds || 0) + addedSeconds;
+    setLocal(STORAGE_PROFILES, profiles);
+    return { success: true, newTotal: profiles[idx].active_time_seconds };
+  }
+  return { success: false };
 }
 
-export async function recordCharacterChatClick(userId: string): Promise<void> {
-  if (!userId) return;
+export async function recordCharacterChatClick(
+  userId: string,
+  characterId?: string,
+  sessionId?: string
+): Promise<{ success: boolean; newTotal?: number }> {
+  if (!userId) return { success: false };
 
   const client = getSupabaseClient();
   if (client) {
-    const { data: current } = await client
-      .from('profiles')
-      .select('character_chats_count')
-      .eq('id', userId)
-      .single();
+    try {
+      // 1. Prefer server-authoritative RPC function (enforces 30s per-character cooldown)
+      const { data, error } = await client.rpc('record_character_chat_interaction', {
+        p_user_id: userId,
+        p_character_id: characterId || 'general',
+        p_session_id: sessionId || 'sess_default',
+      });
 
-    const newTotal = (current?.character_chats_count || 0) + 1;
-    await client.from('profiles').update({ character_chats_count: newTotal }).eq('id', userId);
-  } else {
-    const profiles = getLocal<MemberProfile[]>(STORAGE_PROFILES, []);
-    const idx = profiles.findIndex((p) => p.id === userId);
-    if (idx !== -1) {
-      profiles[idx].character_chats_count = (profiles[idx].character_chats_count || 0) + 1;
-      setLocal(STORAGE_PROFILES, profiles);
+      if (!error && data && data.success) {
+        return { success: true, newTotal: data.character_chats_count };
+      }
+
+      if (data && data.reason === 'spam_cooldown') {
+        return { success: false, newTotal: data.character_chats_count };
+      }
+
+      // Fallback: direct update if RPC is not yet in Supabase
+      const { data: current } = await client
+        .from('profiles')
+        .select('character_chats_count')
+        .eq('id', userId)
+        .single();
+
+      const newTotal = (current?.character_chats_count || 0) + 1;
+      await client.from('profiles').update({ character_chats_count: newTotal }).eq('id', userId);
+      return { success: true, newTotal };
+    } catch (err) {
+      console.warn('Supabase chat interaction update error:', err);
     }
   }
+
+  // Local fallback
+  const profiles = getLocal<MemberProfile[]>(STORAGE_PROFILES, []);
+  const idx = profiles.findIndex((p) => p.id === userId);
+  if (idx !== -1) {
+    profiles[idx].character_chats_count = (profiles[idx].character_chats_count || 0) + 1;
+    setLocal(STORAGE_PROFILES, profiles);
+    return { success: true, newTotal: profiles[idx].character_chats_count };
+  }
+  return { success: false };
 }
 
 // Format seconds into human readable duration string (e.g., "25 giờ 30 phút")

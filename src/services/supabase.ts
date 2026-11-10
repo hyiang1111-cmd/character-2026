@@ -4,7 +4,19 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 export const SUPABASE_URL_KEY = 'pca_supabase_url';
 export const SUPABASE_ANON_KEY = 'pca_supabase_anon_key';
 
-// Get active Supabase configuration (either from VITE env vars or stored local settings)
+// Central shared memory credentials (set from siteContent or server)
+let sharedSupabaseUrl = '';
+let sharedSupabaseAnonKey = '';
+
+export function setSharedSupabaseCredentials(url?: string, anonKey?: string) {
+  if (url && url.trim()) sharedSupabaseUrl = url.trim();
+  if (anonKey && anonKey.trim()) sharedSupabaseAnonKey = anonKey.trim();
+  if (url || anonKey) {
+    supabaseInstance = null; // force re-evaluation of client
+  }
+}
+
+// Get active Supabase configuration (from env vars, central site settings, or local overrides)
 export function getSupabaseCredentials() {
   const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
   const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -17,8 +29,8 @@ export function getSupabaseCredentials() {
     localKey = localStorage.getItem(SUPABASE_ANON_KEY) || '';
   }
 
-  const url = (localUrl || envUrl || '').trim();
-  const anonKey = (localKey || envKey || '').trim();
+  const url = (sharedSupabaseUrl || localUrl || envUrl || '').trim();
+  const anonKey = (sharedSupabaseAnonKey || localKey || envKey || '').trim();
 
   return { url, anonKey };
 }
@@ -59,6 +71,7 @@ export function saveSupabaseCredentials(url: string, anonKey: string) {
     if (anonKey) localStorage.setItem(SUPABASE_ANON_KEY, anonKey.trim());
     else localStorage.removeItem(SUPABASE_ANON_KEY);
   }
+  setSharedSupabaseCredentials(url, anonKey);
   supabaseInstance = null; // reset instance so next get re-evaluates
 }
 
@@ -88,6 +101,8 @@ export interface MemberProfile {
   active_badge_ids: string[];
   created_at: string;
   updated_at: string;
+  is_online?: boolean; // Realtime presence flag (active in last 2 mins), strictly display-only
+  last_heartbeat_at?: string;
 }
 
 export interface VipTierConfig {

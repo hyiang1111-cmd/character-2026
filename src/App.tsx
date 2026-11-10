@@ -38,6 +38,7 @@ import {
   getCharacterTags,
   CharacterTagRecord
 } from './services/characterRankingStorage';
+import { setSharedSupabaseCredentials, getSupabaseClient } from './services/supabase';
 import { isValidHttpsUrl } from './services/promptGenerator';
 import { Sparkles, BookOpen, Layers, Search, X } from 'lucide-react';
 
@@ -112,6 +113,9 @@ function AppContent() {
       ]);
       setCharacters(fetchedChars);
       setSiteContent(fetchedSite);
+      if (fetchedSite?.supabaseUrl || fetchedSite?.supabaseAnonKey) {
+        setSharedSupabaseCredentials(fetchedSite.supabaseUrl, fetchedSite.supabaseAnonKey);
+      }
       setCustomTags(fetchedTags);
     } catch (err) {
       console.error('Failed to load archive data:', err);
@@ -127,6 +131,49 @@ function AppContent() {
     }, isAdmin);
     return () => unsubscribe();
   }, [isAdmin]);
+
+  // Realtime Character Tags synchronization across Admin and Public views
+  useEffect(() => {
+    const handleTagsUpdated = async () => {
+      try {
+        const latestTags = await getCharacterTags();
+        setCustomTags(latestTags);
+      } catch (e) {
+        console.warn('Failed to reload character tags:', e);
+      }
+    };
+
+    window.addEventListener('pca_tags_updated', handleTagsUpdated);
+    window.addEventListener('storage', handleTagsUpdated);
+
+    // Subscribe to Supabase Realtime channel for live tag updates if configured
+    const client = getSupabaseClient();
+    let channel: any = null;
+    if (client) {
+      try {
+        channel = client
+          .channel('realtime:public_tags_live')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'character_tags' },
+            () => {
+              handleTagsUpdated();
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.warn('Realtime tag channel warning:', err);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('pca_tags_updated', handleTagsUpdated);
+      window.removeEventListener('storage', handleTagsUpdated);
+      if (client && channel) {
+        client.removeChannel(channel);
+      }
+    };
+  }, []);
 
   // Toast helper
   const showToast = (type: 'success' | 'error' | 'info', title: string, message?: string) => {
@@ -148,9 +195,9 @@ function AppContent() {
     recordVerifiedCharacterView(char.id);
   };
 
-  // Direct Google AI Studio Chat action with hot score tracking
+  // Direct Google AI Studio Chat action with hot score & server-side interaction tracking
   const handleStartChat = (character: Character) => {
-    recordChatClick();
+    recordChatClick(character.id);
     recordVerifiedCharacterChat(character.id);
     if (character.chatUrl && isValidHttpsUrl(character.chatUrl)) {
       window.open(character.chatUrl, '_blank', 'noopener,noreferrer');
@@ -188,15 +235,19 @@ function AppContent() {
     [characters]
   );
 
-  // Aggregated dynamic character tags directly from published characters' tags array + admin custom tags
+  // Aggregated dynamic character tags:
+  // MUST display ALL active tags from Admin Tag Management (even if count is 0),
+  // with exact names, custom colors, icons, and sort orders.
   const aggregatedTags: CharacterTagItem[] = useMemo(() => {
     const map = new Map<string, { label: string; count: number; color?: string; icon?: string; sortOrder?: number; isActive?: boolean }>();
 
-    // Seed or enrich with custom tags defined in Admin Tag Management
+    // 1. First add ALL active tags defined in Admin Tag Management (including count = 0)
     customTags.forEach((ct) => {
-      const key = ct.name.toLowerCase().trim();
+      const cleanName = String(ct.name || '').trim().replace(/^#+/, '');
+      if (!cleanName) return;
+      const key = cleanName.toLowerCase();
       map.set(key, {
-        label: ct.name,
+        label: cleanName,
         count: 0,
         color: ct.color,
         icon: ct.icon,
@@ -205,6 +256,7 @@ function AppContent() {
       });
     });
 
+    // 2. Count published characters using each tag
     publishedCharacters.forEach((char) => {
       if (!Array.isArray(char.tags)) return;
       const seenKeysInChar = new Set<string>();
@@ -232,8 +284,9 @@ function AppContent() {
       });
     });
 
+    // 3. Keep ALL tags where isActive is true (including count == 0 as explicitly requested)
     return Array.from(map.entries())
-      .filter(([_, data]) => data.count > 0 && data.isActive !== false)
+      .filter(([_, data]) => data.isActive !== false)
       .map(([key, data]) => ({
         key,
         label: data.label,
@@ -246,6 +299,8 @@ function AppContent() {
         if (a.sortOrder !== undefined && b.sortOrder !== undefined && a.sortOrder !== b.sortOrder) {
           return a.sortOrder - b.sortOrder;
         }
+        if (a.sortOrder !== undefined && b.sortOrder === undefined) return -1;
+        if (a.sortOrder === undefined && b.sortOrder !== undefined) return 1;
         return b.count - a.count || a.label.localeCompare(b.label);
       });
   }, [publishedCharacters, customTags]);

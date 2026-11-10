@@ -267,6 +267,14 @@ export const HonorCard: React.FC<HonorCardProps> = ({
               />
             </div>
 
+            {/* Online Presence Indicator: strictly visual, does not affect ranking */}
+            {entry.is_online && (
+              <span
+                className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white shadow-xs animate-pulse"
+                title="Đang online tại thời điểm hiện tại"
+              />
+            )}
+
             {/* MOBA Rank Emblem placed on the Avatar Rim */}
             <div
               className="absolute -bottom-2 -right-2 transition-transform group-hover:scale-115 duration-200 drop-shadow-md"

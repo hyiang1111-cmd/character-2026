@@ -3,7 +3,9 @@ import React, {
   useContext,
   useState,
   useEffect,
-  useCallback
+  useCallback,
+  useMemo,
+  useRef
 } from 'react';
 import {
   MemberProfile,
@@ -34,7 +36,7 @@ interface CommunityContextType {
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<MemberProfile>) => Promise<boolean>;
   trackCharacterView: (characterId: string) => Promise<void>;
-  recordChatClick: () => Promise<void>;
+  recordChatClick: (characterId?: string) => Promise<void>;
   viewMemberProfileId: string | null;
   openMemberProfileModal: (userId: string) => void;
   closeMemberProfileModal: () => void;
@@ -104,50 +106,106 @@ export const CommunityProvider: React.FC<{
     refreshMember();
   }, [refreshMember]);
 
-  // Active Time Heartbeat Tracker (30-second interval)
+  // Unique session ID for this browser tab instance
+  const sessionId = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      const existing = sessionStorage.getItem('pca_tab_session_id');
+      if (existing) return existing;
+      const created = 'sess_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
+      sessionStorage.setItem('pca_tab_session_id', created);
+      return created;
+    }
+    return 'sess_default_' + Date.now();
+  }, []);
+
+  // Track recent physical user interactions (prevents unattended AFK background farming)
+  const lastUserInteractionRef = useRef<number>(Date.now());
+
+  useEffect(() => {
+    const handleUserInteraction = () => {
+      lastUserInteractionRef.current = Date.now();
+    };
+
+    window.addEventListener('mousemove', handleUserInteraction, { passive: true });
+    window.addEventListener('keydown', handleUserInteraction, { passive: true });
+    window.addEventListener('touchstart', handleUserInteraction, { passive: true });
+    window.addEventListener('scroll', handleUserInteraction, { passive: true });
+    window.addEventListener('click', handleUserInteraction, { passive: true });
+
+    return () => {
+      window.removeEventListener('mousemove', handleUserInteraction);
+      window.removeEventListener('keydown', handleUserInteraction);
+      window.removeEventListener('touchstart', handleUserInteraction);
+      window.removeEventListener('scroll', handleUserInteraction);
+      window.removeEventListener('click', handleUserInteraction);
+    };
+  }, []);
+
+  // Server-Authoritative Active Time Heartbeat Tracker (30-second interval)
   useEffect(() => {
     if (!member?.id) return;
 
     const interval = setInterval(async () => {
-      // Only count active time if window is visible and focused
-      if (document.visibilityState === 'visible' && document.hasFocus()) {
-        try {
-          await updateUserActiveTime(member.id, 30);
+      // 1. Page must be currently visible and focused
+      if (document.visibilityState !== 'visible' || !document.hasFocus()) {
+        return;
+      }
+
+      // 2. User must have interacted within the last 60 seconds (reject AFK/dormant page farming)
+      const now = Date.now();
+      const idleElapsed = now - lastUserInteractionRef.current;
+      if (idleElapsed > 60000) {
+        return;
+      }
+
+      // 3. Multi-Tab coordination: only the active focused tab sends heartbeat per 25-second window
+      const lastTabHeartbeat = Number(localStorage.getItem('pca_tab_heartbeat_timestamp') || 0);
+      if (now - lastTabHeartbeat < 25000) {
+        return;
+      }
+      localStorage.setItem('pca_tab_heartbeat_timestamp', String(now));
+
+      // 4. Send heartbeat to server RPC
+      try {
+        const result = await updateUserActiveTime(member.id, 30, sessionId);
+        if (result.newTotal !== undefined) {
           setMember((prev) => {
             if (!prev) return null;
             return {
               ...prev,
-              active_time_seconds: (prev.active_time_seconds || 0) + 30,
+              active_time_seconds: result.newTotal!,
             };
           });
-          // Periodically update global ranks map
-          refreshRanksMap();
-        } catch (e) {
-          console.warn('Active time update error:', e);
         }
+        // Periodically refresh global ranks map
+        refreshRanksMap();
+      } catch (e) {
+        console.warn('Active time update error:', e);
       }
     }, 30000);
 
     return () => clearInterval(interval);
-  }, [member?.id, refreshRanksMap]);
+  }, [member?.id, sessionId, refreshRanksMap]);
 
-  // Record Chat Click handler
-  const recordChatClick = useCallback(async () => {
+  // Verified Record Chat Click handler (with 30-second per-character anti-spam protection)
+  const recordChatClick = useCallback(async (characterId?: string) => {
     if (!member?.id) return;
     try {
-      await recordCharacterChatClick(member.id);
-      setMember((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          character_chats_count: (prev.character_chats_count || 0) + 1,
-        };
-      });
+      const result = await recordCharacterChatClick(member.id, characterId, sessionId);
+      if (result.newTotal !== undefined) {
+        setMember((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            character_chats_count: result.newTotal!,
+          };
+        });
+      }
       await refreshRanksMap();
     } catch (e) {
       console.warn('Chat click record error:', e);
     }
-  }, [member?.id, refreshRanksMap]);
+  }, [member?.id, sessionId, refreshRanksMap]);
 
   // Register
   const register = useCallback(async (username: string, email: string, pass: string) => {

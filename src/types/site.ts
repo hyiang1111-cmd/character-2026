@@ -12,6 +12,8 @@ export interface SiteContent {
   navLibrary: string;
   navAbout: string;
   categories: string[];
+  supabaseUrl?: string;
+  supabaseAnonKey?: string;
 }
 
 export const DEFAULT_SITE_CONTENT: SiteContent = {

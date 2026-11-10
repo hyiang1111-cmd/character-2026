@@ -245,6 +245,14 @@ export const HallOfFame: React.FC<HallOfFameProps> = ({ onOpenAuth }) => {
               <span>BẢNG XẾP HẠNG DONATE ({donationList.length})</span>
             </button>
           </div>
+
+          {/* Centralized Fair Ranking Rule Explanatory Note */}
+          <div className="mt-5 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/70 backdrop-blur-xs text-[11px] font-medium text-purple-900 border border-purple-200/60 shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+            <span>
+              Thứ hạng tính theo <strong>tổng thời gian và lượt tương tác thực tế</strong> đồng bộ từ Supabase. Thành viên offline vẫn giữ nguyên thứ vị.
+            </span>
+          </div>
         </div>
       </div>
 
@@ -388,6 +396,12 @@ export const HallOfFame: React.FC<HallOfFameProps> = ({ onOpenAuth }) => {
                       alt={top2.username}
                       className="w-20 h-20 rounded-full object-cover border-4 border-rose-500 shadow-md group-hover:scale-105 transition-transform"
                     />
+                    {top2.is_online && (
+                      <span
+                        className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white shadow-xs animate-pulse"
+                        title="Đang online tại thời điểm hiện tại"
+                      />
+                    )}
                     <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-rose-700 text-white text-[10px] font-black px-3 py-0.5 rounded-full shadow-xs whitespace-nowrap">
                       TOP 2 HOÀNG GIA
                     </div>
@@ -445,6 +459,12 @@ export const HallOfFame: React.FC<HallOfFameProps> = ({ onOpenAuth }) => {
                       alt={top1.username}
                       className="w-24 h-24 rounded-full object-cover border-4 border-amber-500 shadow-xl ring-4 ring-amber-300/60 group-hover:scale-105 transition-transform"
                     />
+                    {top1.is_online && (
+                      <span
+                        className="absolute top-1 right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white shadow-xs animate-pulse"
+                        title="Đang online tại thời điểm hiện tại"
+                      />
+                    )}
                     <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-600 to-yellow-600 text-white text-xs font-black px-4 py-0.5 rounded-full shadow-md whitespace-nowrap flex items-center gap-1 border border-amber-300">
                       <Crown className="w-3.5 h-3.5 fill-current text-amber-200" />
                       <span>TOP 1 QUÁN QUÂN</span>
@@ -496,6 +516,12 @@ export const HallOfFame: React.FC<HallOfFameProps> = ({ onOpenAuth }) => {
                       alt={top3.username}
                       className="w-20 h-20 rounded-full object-cover border-4 border-purple-500 shadow-md group-hover:scale-105 transition-transform"
                     />
+                    {top3.is_online && (
+                      <span
+                        className="absolute top-1 right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white shadow-xs animate-pulse"
+                        title="Đang online tại thời điểm hiện tại"
+                      />
+                    )}
                     <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-purple-700 text-white text-[10px] font-black px-3 py-0.5 rounded-full shadow-xs whitespace-nowrap">
                       TOP 3 VƯƠNG GIẢ
                     </div>

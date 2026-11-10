@@ -72,6 +72,7 @@ import {
   updateDonationClaimInternalNotes,
   uploadAssetImage,
 } from '../../services/communityStorage';
+import { getSiteContent, saveSiteContent } from '../../services/storage';
 import {
   MemberProfile,
   DonationClaim,
@@ -2259,52 +2260,40 @@ export const CommunityAdmin: React.FC<CommunityAdminProps> = ({ onShowToast }) =
 
             <div className="pt-2">
               <button
-                onClick={() => {
+                onClick={async () => {
                   saveSupabaseCredentials(supaUrl, supaKey);
-                  onShowToast('success', 'Đã lưu cấu hình kết nối Supabase!');
+                  try {
+                    const currentSite = await getSiteContent();
+                    await saveSiteContent({
+                      ...currentSite,
+                      supabaseUrl: supaUrl.trim(),
+                      supabaseAnonKey: supaKey.trim(),
+                    });
+                  } catch (e) {
+                    console.warn('Central siteContent update notice:', e);
+                  }
+                  onShowToast('success', 'Đã lưu cấu hình kết nối Supabase cho toàn bộ hệ thống!');
                   refreshAll();
                 }}
-                className="px-6 py-2.5 rounded-2xl bg-[#865B9E] text-white font-bold hover:bg-[#734988] cursor-pointer"
+                className="px-6 py-2.5 rounded-2xl bg-[#865B9E] text-white font-bold hover:bg-[#734988] cursor-pointer shadow-xs transition-all"
               >
-                Lưu Khóa Kết Nối
+                Lưu Khóa Kết Nối Toàn Hệ Thống
               </button>
             </div>
 
             {/* SQL Snippet */}
             <div className="mt-6 space-y-2">
               <div className="flex items-center justify-between">
-                <h4 className="font-bold text-sm text-[#51434A]">SQL Migration Cho BXH Công Khai & Bảo Mật RLS</h4>
-                <span className="text-[10px] text-[#865B9E] font-mono">Bảng: profiles, views, badges, audit_logs</span>
+                <h4 className="font-bold text-sm text-[#51434A]">SQL Migration Cho BXH Hoạt Động & Character Tags</h4>
+                <span className="text-[10px] text-[#865B9E] font-mono">File: supabase-leaderboard-migration.sql</span>
               </div>
               <pre className="p-4 rounded-2xl bg-gray-900 text-purple-200 font-mono text-[11px] overflow-x-auto leading-relaxed">
-{`-- 1. Bổ sung các cột tính điểm cho bảng profiles
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS active_time_seconds INTEGER DEFAULT 0;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS character_chats_count INTEGER DEFAULT 0;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS donation_xu INTEGER DEFAULT 0;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS total_donated NUMERIC DEFAULT 0;
-
--- 2. TẠO VIEW BXH CÔNG KHAI (CHỈ HIỂN THỊ THÔNG TIN ĐƯỢC PHÉP, KHÔNG LỘ EMAIL)
-CREATE OR REPLACE VIEW public.public_leaderboard_view AS
-SELECT 
-  id, username, avatar_url, bio, vip_tier, is_admin,
-  active_time_seconds, character_chats_count, characters_explored_count,
-  messages_count, total_donated, donation_xu, active_badge_ids, created_at
-FROM public.profiles
-WHERE is_banned = false;
-
--- Cấp quyền SELECT trên View cho khách (anon) và thành viên (authenticated)
-GRANT SELECT ON public.public_leaderboard_view TO anon, authenticated;
-
--- 3. RLS CHÍNH SÁCH BẢO VỆ PROFILES (Cho phép đọc thông tin công khai)
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
-CREATE POLICY "Public profiles are viewable by everyone"
-  ON public.profiles FOR SELECT
-  TO anon, authenticated
-  USING (is_banned = false);
-
--- 4. BẬT REALTIME CHO BXH TỰ ĐỘNG CẬP NHẬT
-ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;`}
+{`-- Xem và chạy toàn bộ mã SQL hoàn chỉnh trong file 'supabase-leaderboard-migration.sql':
+-- 1. Bổ sung bảng user_activity_heartbeats & character_chat_interactions
+-- 2. Khởi tạo RPC record_activity_heartbeat (chống spam nhiều tab, chống treo AFK)
+-- 3. Khởi tạo RPC record_character_chat_interaction (chống spam click)
+-- 4. Tạo view public.public_leaderboard_view sắp xếp theo active_time_seconds
+-- 5. Cấp quyền SELECT public cho bảng character_tags để khách vãng lai xem được toàn bộ tag.`}
               </pre>
             </div>
           </div>

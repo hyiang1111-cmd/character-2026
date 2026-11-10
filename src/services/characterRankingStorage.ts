@@ -177,6 +177,9 @@ export async function saveCharacterTag(tag: Partial<CharacterTagRecord>): Promis
     current.push(record);
   }
   setLocal(STORAGE_TAGS, current);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('pca_tags_updated'));
+  }
 
   return record;
 }
@@ -205,6 +208,9 @@ export async function deleteCharacterTag(
     STORAGE_TAGS,
     current.filter((t) => t.id !== tagId && t.slug !== targetLower)
   );
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('pca_tags_updated'));
+  }
 
   // 3. Remove tag from all characters without deleting character
   const saver = onSave || saveCharacter;
@@ -278,6 +284,9 @@ export async function bulkAssignTagToCharacters(
       }
     }
   }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('pca_tags_updated'));
+  }
 }
 
 export async function bulkUnassignTagFromCharacters(
@@ -298,6 +307,9 @@ export async function bulkUnassignTagFromCharacters(
         await saver(updatedChar);
       }
     }
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('pca_tags_updated'));
   }
 }
 

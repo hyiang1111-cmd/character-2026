@@ -48,7 +48,9 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       <h3 className="text-2xl sm:text-3xl font-serif-title font-medium text-[#51434A] mb-3">
         {isSearchFiltered
           ? activeTag
-            ? `Không tìm thấy nhân vật phù hợp với Tag #${activeTag}`
+            ? searchQuery
+              ? `Không tìm thấy nhân vật phù hợp với Tag #${activeTag}`
+              : 'Chưa có nhân vật nào thuộc Tag này.'
             : 'Không tìm thấy nhân vật phù hợp'
           : 'Chưa có nhân vật nào được lưu trữ.'}
       </h3>
@@ -58,7 +60,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
           ? activeTag && searchQuery
             ? `Không có nhân vật nào gắn Tag #${activeTag} đồng thời khớp với từ khóa "${searchQuery}". Hãy thử chọn Tag khác hoặc xóa từ khóa tìm kiếm.`
             : activeTag
-            ? `Hiện chưa có nhân vật nào gắn Tag #${activeTag}. Bạn có thể chọn Tag khác hoặc xem tất cả nhân vật.`
+            ? `Hiện chưa có nhân vật nào được gắn Tag #${activeTag}. Bạn có thể chọn Tag khác hoặc nhấn "Xem tất cả nhân vật" để trở về danh sách ban đầu.`
             : `Không tìm thấy nhân vật nào khớp với từ khóa "${searchQuery}". Hãy thử tìm với tên, thể loại hoặc thuộc tính khác.`
           : 'Các nhân vật do Quản trị viên khởi tạo và xuất bản sẽ xuất hiện tại đây.'}
       </p>
