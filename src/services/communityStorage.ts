@@ -194,7 +194,7 @@ export async function getPublicLeaderboardProfiles(): Promise<MemberProfile[]> {
         .order('active_time_seconds', { ascending: false })
         .order('character_chats_count', { ascending: false });
 
-      if (!viewError && Array.isArray(viewData)) {
+      if (!viewError && Array.isArray(viewData) && viewData.length > 0) {
         return viewData as MemberProfile[];
       }
 
@@ -208,20 +208,19 @@ export async function getPublicLeaderboardProfiles(): Promise<MemberProfile[]> {
         .order('active_time_seconds', { ascending: false })
         .order('character_chats_count', { ascending: false });
 
-      if (error) {
-        throw new Error(error.message || 'Lỗi truy vấn dữ liệu bảng xếp hạng từ Supabase.');
+      if (!error && Array.isArray(data) && data.length > 0) {
+        return data as MemberProfile[];
+      } else if (error) {
+        console.warn('Supabase profiles query notice for public leaderboard:', error.message);
       }
-
-      return (data || []) as MemberProfile[];
     } catch (err: any) {
-      console.error('Error fetching Supabase public leaderboard profiles:', err);
-      throw err;
+      console.warn('Failed to fetch public leaderboard profiles from Supabase, falling back to local storage:', err);
     }
-  } else {
-    // If Supabase is not yet configured, return active local profiles
-    const local = getLocal<MemberProfile[]>(STORAGE_PROFILES, []);
-    return local.filter((p) => !p.is_banned);
   }
+
+  // Graceful fallback to active local profiles
+  const local = getLocal<MemberProfile[]>(STORAGE_PROFILES, []);
+  return local.filter((p) => !p.is_banned);
 }
 
 export async function getActivityLeaderboard(limitCount: number = 100): Promise<MemberLeaderboardEntry[]> {

@@ -2,16 +2,15 @@
 -- CHARACTER ARCHIVE - CHARACTER REVIEWS & METRICS FULLY HARDENED PRODUCTION MIGRATION
 -- ============================================================================
 -- File: supabase-character-reviews-fix.sql
--- Run this script in the Supabase SQL Editor.
 -- Description:
 --   1. Ensures tables 'character_reviews' and 'character_metrics' exist without dropping data.
---   2. Adds unique constraint uq_character_reviews_char_user to enforce 1 review per user per character.
---   3. Hardens RLS & Permissions:
+--   2. Dynamically drops ALL existing policies on character_reviews and character_metrics to prevent lingering open rules.
+--   3. Hardens RLS & Table Permissions:
 --        - REVOKES all direct INSERT/UPDATE/DELETE table writes from anon and authenticated.
 --        - ONLY allows public SELECT access on non-hidden reviews and character metrics.
---        - Strictly forbids authenticated members from updating character_metrics directly.
 --   4. Provides SECURITY DEFINER RPC functions with SET search_path = public, pg_temp:
---        - submit_character_review(p_character_id, p_rating, p_feedback)
+--        - get_public_character_reviews(p_character_id) [RETURNS PUBLIC FIELDS ONLY - NO USER_ID/EMAIL]
+--        - submit_character_review(p_character_id, p_rating, p_feedback) [PRESERVES IS_HIDDEN ON UPDATE]
 --        - delete_character_review(p_review_id)
 --        - recalculate_character_metrics_internal(p_character_id) [INTERNAL ONLY]
 -- ============================================================================
@@ -48,25 +47,22 @@ BEGIN
   END IF;
 END $$;
 
--- Deduplicate existing reviews (if any duplicate (character_id, user_id) pairs exist, keep latest created)
-DELETE FROM public.character_reviews a
-USING public.character_reviews b
-WHERE a.character_id = b.character_id
-  AND a.user_id = b.user_id
-  AND a.created_at < b.created_at;
-
--- Enforce 1 review per user per character via UNIQUE constraint
+-- Enforce 1 review per user per character via UNIQUE constraint safely
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'uq_character_reviews_char_user'
   ) THEN
-    ALTER TABLE public.character_reviews
-    ADD CONSTRAINT uq_character_reviews_char_user UNIQUE (character_id, user_id);
+    -- Only add constraint if no duplicates exist, otherwise user can inspect duplicates first
+    IF NOT EXISTS (
+      SELECT character_id, user_id FROM public.character_reviews GROUP BY character_id, user_id HAVING COUNT(*) > 1
+    ) THEN
+      ALTER TABLE public.character_reviews ADD CONSTRAINT uq_character_reviews_char_user UNIQUE (character_id, user_id);
+    END IF;
   END IF;
 END $$;
 
--- Indexes for performance
+-- Indexes for query performance
 CREATE INDEX IF NOT EXISTS idx_character_reviews_character_id ON public.character_reviews(character_id);
 CREATE INDEX IF NOT EXISTS idx_character_reviews_user_id ON public.character_reviews(user_id);
 CREATE INDEX IF NOT EXISTS idx_character_reviews_is_hidden ON public.character_reviews(is_hidden);
@@ -96,69 +92,32 @@ CREATE INDEX IF NOT EXISTS idx_character_metrics_hot_score ON public.character_m
 CREATE INDEX IF NOT EXISTS idx_character_metrics_avg_rating ON public.character_metrics(average_rating DESC);
 
 -- ----------------------------------------------------------------------------
--- 3. ROW LEVEL SECURITY (RLS) POLICIES & PERMISSIONS HARDENING
+-- 3. DYNAMICALLY DROP ALL EXISTING POLICIES & REBUILD STRICT RLS
 -- ----------------------------------------------------------------------------
 ALTER TABLE public.character_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.character_metrics ENABLE ROW LEVEL SECURITY;
 
--- Clean up legacy policies
-DROP POLICY IF EXISTS "Public can view non-hidden reviews" ON public.character_reviews;
-DROP POLICY IF EXISTS "Anyone can select character_reviews" ON public.character_reviews;
-DROP POLICY IF EXISTS "Users can insert their own review" ON public.character_reviews;
-DROP POLICY IF EXISTS "Users can update their own review" ON public.character_reviews;
-DROP POLICY IF EXISTS "Users and admins can delete reviews" ON public.character_reviews;
-DROP POLICY IF EXISTS "Public can view character_metrics" ON public.character_metrics;
-DROP POLICY IF EXISTS "Authenticated can update character_metrics" ON public.character_metrics;
+DO $$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN (
+    SELECT policyname, tablename
+    FROM pg_policies
+    WHERE schemaname = 'public' AND tablename IN ('character_reviews', 'character_metrics')
+  ) LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', r.policyname, r.tablename);
+  END LOOP;
+END $$;
 
--- 3.1 Policy on character_reviews: Public SELECT (anon & authenticated) for non-hidden reviews
+-- Policy on character_reviews: Public SELECT for non-hidden reviews only (or owner)
 CREATE POLICY "Public can view non-hidden reviews"
 ON public.character_reviews
 FOR SELECT
 TO public
 USING (is_hidden IS NOT TRUE OR (auth.uid() IS NOT NULL AND auth.uid()::text = user_id));
 
--- Backup RLS Policies for character_reviews write operations
-CREATE POLICY "Users can insert their own review via RLS fallback"
-ON public.character_reviews
-FOR INSERT
-TO authenticated
-WITH CHECK (auth.uid() IS NOT NULL AND auth.uid()::text = user_id);
-
-CREATE POLICY "Users can update their own review via RLS fallback"
-ON public.character_reviews
-FOR UPDATE
-TO authenticated
-USING (
-  auth.uid()::text = user_id
-  OR EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE id::text = auth.uid()::text
-      AND (role = 'admin' OR is_admin IS TRUE)
-  )
-)
-WITH CHECK (
-  auth.uid()::text = user_id
-  OR EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE id::text = auth.uid()::text
-      AND (role = 'admin' OR is_admin IS TRUE)
-  )
-);
-
-CREATE POLICY "Users and admins can delete reviews via RLS fallback"
-ON public.character_reviews
-FOR DELETE
-TO authenticated
-USING (
-  auth.uid()::text = user_id
-  OR EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE id::text = auth.uid()::text
-      AND (role = 'admin' OR is_admin IS TRUE)
-  )
-);
-
--- 3.2 Policy on character_metrics: Public SELECT ONLY
+-- Policy on character_metrics: Public SELECT ONLY
 CREATE POLICY "Public can view character_metrics"
 ON public.character_metrics
 FOR SELECT
@@ -166,7 +125,64 @@ TO public
 USING (true);
 
 -- ----------------------------------------------------------------------------
--- 4. INTERNAL METRICS RECALCULATION FUNCTION (PRIVATE)
+-- 4. RPC: PUBLIC REVIEWS PROJECTION (RETURNS PUBLIC FIELDS ONLY - NO USER_ID)
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.get_public_character_reviews(
+  p_character_id TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+  id TEXT,
+  character_id TEXT,
+  username TEXT,
+  avatar_url TEXT,
+  rating INTEGER,
+  feedback TEXT,
+  is_hidden BOOLEAN,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF p_character_id IS NOT NULL AND TRIM(p_character_id) <> '' THEN
+    RETURN QUERY
+    SELECT
+      r.id,
+      r.character_id,
+      r.username,
+      r.avatar_url,
+      r.rating,
+      r.feedback,
+      r.is_hidden,
+      r.created_at,
+      r.updated_at
+    FROM public.character_reviews r
+    WHERE r.character_id = p_character_id
+      AND (r.is_hidden IS NOT TRUE)
+    ORDER BY r.created_at DESC;
+  ELSE
+    RETURN QUERY
+    SELECT
+      r.id,
+      r.character_id,
+      r.username,
+      r.avatar_url,
+      r.rating,
+      r.feedback,
+      r.is_hidden,
+      r.created_at,
+      r.updated_at
+    FROM public.character_reviews r
+    WHERE (r.is_hidden IS NOT TRUE)
+    ORDER BY r.created_at DESC;
+  END IF;
+END;
+$$;
+
+-- ----------------------------------------------------------------------------
+-- 5. INTERNAL METRICS RECALCULATION FUNCTION (PRIVATE)
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.recalculate_character_metrics_internal(p_character_id TEXT)
 RETURNS VOID
@@ -265,7 +281,7 @@ END;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 5. RPC: SUBMIT / UPDATE CHARACTER REVIEW (SECURITY DEFINER)
+-- 6. RPC: SUBMIT / UPDATE CHARACTER REVIEW (SECURITY DEFINER)
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.submit_character_review(
   p_character_id TEXT,
@@ -279,11 +295,15 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_user_id TEXT;
-  v_username TEXT;
+  v_username TEXT := 'Thành viên';
   v_avatar_url TEXT := '';
   v_review_id TEXT;
+  v_existing_hidden BOOLEAN := FALSE;
   v_now TIMESTAMPTZ := NOW();
   v_result JSONB;
+  v_has_username_col BOOLEAN := FALSE;
+  v_has_display_name_col BOOLEAN := FALSE;
+  v_has_avatar_col BOOLEAN := FALSE;
 BEGIN
   -- 1. Require authenticated user
   v_user_id := auth.uid()::text;
@@ -304,65 +324,81 @@ BEGIN
     RAISE EXCEPTION 'Vui lòng nhập nội dung đánh giá.';
   END IF;
 
-  -- 3. Fetch verified user metadata from public.profiles (anti-spoofing)
-  SELECT
-    COALESCE(username, display_name, 'Thành viên'),
-    COALESCE(avatar_url, '')
-  INTO v_username, v_avatar_url
-  FROM public.profiles
-  WHERE id::text = v_user_id;
+  -- 3. Safely check profile schema columns before querying
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='username') INTO v_has_username_col;
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='display_name') INTO v_has_display_name_col;
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='avatar_url') INTO v_has_avatar_col;
+
+  IF v_has_username_col THEN
+    EXECUTE 'SELECT COALESCE(username, ''Thành viên'') FROM public.profiles WHERE id::text = $1' INTO v_username USING v_user_id;
+  ELSIF v_has_display_name_col THEN
+    EXECUTE 'SELECT COALESCE(display_name, ''Thành viên'') FROM public.profiles WHERE id::text = $1' INTO v_username USING v_user_id;
+  END IF;
+
+  IF v_has_avatar_col THEN
+    EXECUTE 'SELECT COALESCE(avatar_url, '''') FROM public.profiles WHERE id::text = $1' INTO v_avatar_url USING v_user_id;
+  END IF;
 
   IF v_username IS NULL OR v_username = '' THEN
     v_username := 'Thành viên ' || SUBSTRING(v_user_id FROM 1 FOR 6);
   END IF;
 
-  -- 4. Construct unique review ID
-  v_review_id := 'rev_' || p_character_id || '_' || v_user_id;
+  -- 4. Check if review already exists for this user and character
+  SELECT id, is_hidden INTO v_review_id, v_existing_hidden
+  FROM public.character_reviews
+  WHERE character_id = p_character_id AND user_id = v_user_id;
 
-  -- 5. Upsert review record with 1 review per user constraint
-  INSERT INTO public.character_reviews (
-    id,
-    character_id,
-    user_id,
-    username,
-    avatar_url,
-    rating,
-    feedback,
-    is_hidden,
-    created_at,
-    updated_at
-  ) VALUES (
-    v_review_id,
-    p_character_id,
-    v_user_id,
-    v_username,
-    v_avatar_url,
-    p_rating,
-    TRIM(p_feedback),
-    FALSE,
-    v_now,
-    v_now
-  )
-  ON CONFLICT (character_id, user_id) DO UPDATE SET
-    rating = EXCLUDED.rating,
-    feedback = EXCLUDED.feedback,
-    username = EXCLUDED.username,
-    avatar_url = EXCLUDED.avatar_url,
-    updated_at = v_now;
+  IF v_review_id IS NOT NULL THEN
+    -- Update existing review without overriding admin hidden status
+    UPDATE public.character_reviews
+    SET
+      rating = p_rating,
+      feedback = TRIM(p_feedback),
+      username = v_username,
+      avatar_url = v_avatar_url,
+      updated_at = v_now
+    WHERE id = v_review_id;
+  ELSE
+    -- Create new review
+    v_review_id := 'rev_' || p_character_id || '_' || v_user_id;
+    v_existing_hidden := FALSE;
+    INSERT INTO public.character_reviews (
+      id,
+      character_id,
+      user_id,
+      username,
+      avatar_url,
+      rating,
+      feedback,
+      is_hidden,
+      created_at,
+      updated_at
+    ) VALUES (
+      v_review_id,
+      p_character_id,
+      v_user_id,
+      v_username,
+      v_avatar_url,
+      p_rating,
+      TRIM(p_feedback),
+      FALSE,
+      v_now,
+      v_now
+    );
+  END IF;
 
-  -- 6. Recalculate metrics atomically
+  -- 5. Recalculate metrics atomically
   PERFORM public.recalculate_character_metrics_internal(p_character_id);
 
-  -- 7. Return JSON response
+  -- 6. Return JSON response reflecting actual database state
   SELECT jsonb_build_object(
     'id', v_review_id,
     'character_id', p_character_id,
-    'user_id', v_user_id,
     'username', v_username,
     'avatar_url', v_avatar_url,
     'rating', p_rating,
     'feedback', TRIM(p_feedback),
-    'is_hidden', FALSE,
+    'is_hidden', v_existing_hidden,
     'created_at', v_now,
     'updated_at', v_now
   ) INTO v_result;
@@ -372,7 +408,7 @@ END;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 6. RPC: DELETE CHARACTER REVIEW (SECURITY DEFINER)
+-- 7. RPC: DELETE CHARACTER REVIEW (SECURITY DEFINER)
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.delete_character_review(
   p_review_id TEXT
@@ -387,13 +423,15 @@ DECLARE
   v_is_admin BOOLEAN := FALSE;
   v_owner_id TEXT;
   v_character_id TEXT;
+  v_has_role_col BOOLEAN := FALSE;
+  v_has_is_admin_col BOOLEAN := FALSE;
 BEGIN
   v_user_id := auth.uid()::text;
   IF v_user_id IS NULL OR v_user_id = '' THEN
     RAISE EXCEPTION 'Bạn chưa đăng nhập.';
   END IF;
 
-  -- Lookup target review details directly from database (do not trust client character_id)
+  -- Lookup target review details directly from database
   SELECT user_id, character_id INTO v_owner_id, v_character_id
   FROM public.character_reviews
   WHERE id = p_review_id;
@@ -402,10 +440,15 @@ BEGIN
     RAISE EXCEPTION 'Không tìm thấy bài đánh giá cần xóa.';
   END IF;
 
-  -- Check if caller is review owner OR admin
-  SELECT (role = 'admin' OR is_admin IS TRUE) INTO v_is_admin
-  FROM public.profiles
-  WHERE id::text = v_user_id;
+  -- Check admin columns safely
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='role') INTO v_has_role_col;
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='is_admin') INTO v_has_is_admin_col;
+
+  IF v_has_role_col THEN
+    EXECUTE 'SELECT COALESCE(role = ''admin'', false) FROM public.profiles WHERE id::text = $1' INTO v_is_admin USING v_user_id;
+  ELSIF v_has_is_admin_col THEN
+    EXECUTE 'SELECT COALESCE(is_admin, false) FROM public.profiles WHERE id::text = $1' INTO v_is_admin USING v_user_id;
+  END IF;
 
   IF v_owner_id <> v_user_id AND NOT COALESCE(v_is_admin, FALSE) THEN
     RAISE EXCEPTION 'Bạn không có quyền xóa bài đánh giá này.';
@@ -422,22 +465,23 @@ END;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 7. PERMISSIONS & EXECUTE GRANTS HARDENING
+-- 8. PERMISSIONS & EXECUTE GRANTS HARDENING
 -- ----------------------------------------------------------------------------
--- 7.1 Revoke direct write table access from anon and authenticated
+-- 8.1 Revoke ALL direct table write permissions from anon and authenticated
 REVOKE INSERT, UPDATE, DELETE ON public.character_reviews FROM anon, authenticated;
 REVOKE INSERT, UPDATE, DELETE ON public.character_metrics FROM anon, authenticated;
 
--- 7.2 Grant SELECT access to public
+-- 8.2 Grant SELECT access to public
 GRANT SELECT ON public.character_reviews TO anon, authenticated;
 GRANT SELECT ON public.character_metrics TO anon, authenticated;
 
--- 7.3 Revoke EXECUTE from PUBLIC / anon on all RPCs
+-- 8.3 Revoke EXECUTE from PUBLIC / anon on all RPCs
 REVOKE EXECUTE ON FUNCTION public.recalculate_character_metrics_internal(TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.submit_character_review(TEXT, INTEGER, TEXT) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.delete_character_review(TEXT) FROM PUBLIC, anon;
 
--- 7.4 Grant EXECUTE strictly to authenticated users on public-facing RPCs
+-- 8.4 Grant EXECUTE to public / authenticated for RPCs
+GRANT EXECUTE ON FUNCTION public.get_public_character_reviews(TEXT) TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.submit_character_review(TEXT, INTEGER, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.delete_character_review(TEXT) TO authenticated;
 

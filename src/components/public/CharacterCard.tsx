@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExternalLink, MessageSquare, User, BookOpen } from 'lucide-react';
+import { ExternalLink, MessageSquare, User, BookOpen, Heart } from 'lucide-react';
 import { Character } from '../../types/character';
 import { isValidHttpsUrl } from '../../services/promptGenerator';
 
@@ -10,6 +10,9 @@ interface CharacterCardProps {
   onStartChat: (character: Character) => void;
   onViewChat?: (character: Character) => void;
   onSelectTag?: (tag: string) => void;
+  isFavorited?: boolean;
+  totalFavorites?: number;
+  onToggleFavorite?: (character: Character) => void;
 }
 
 export const CharacterCard: React.FC<CharacterCardProps> = ({
@@ -18,6 +21,9 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
   onOpenScenario,
   onStartChat,
   onSelectTag,
+  isFavorited = false,
+  totalFavorites = 0,
+  onToggleFavorite,
 }) => {
   const avatar = character.avatarUrl || character.portraitUrl;
   const hasValidChatUrl = Boolean(character.chatUrl && isValidHttpsUrl(character.chatUrl));
@@ -71,18 +77,42 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
             </div>
           </div>
 
-          {/* Content on Right: 1. Name, 2. Nickname, 3. Tags */}
+          {/* Content on Right: 1. Name & Favorite Heart, 2. Nickname, 3. Tags */}
           <div className="flex-1 min-w-0">
-            {/* 1. Tên nhân vật: nổi bật nhất, font chữ dễ đọc */}
-            <h3
-              onClick={() => onOpenDetails(character)}
-              className="font-serif-title text-lg sm:text-xl font-bold text-[#493B55] hover:text-[#774D8E] transition-colors cursor-pointer truncate leading-tight"
-              title={character.name}
-            >
-              {character.name}
-            </h3>
+            <div className="flex items-start justify-between gap-1.5">
+              {/* 1. Tên nhân vật: nổi bật nhất, font chữ dễ đọc */}
+              <h3
+                onClick={() => onOpenDetails(character)}
+                className="font-serif-title text-lg sm:text-xl font-bold text-[#493B55] hover:text-[#774D8E] transition-colors cursor-pointer truncate leading-tight flex-1"
+                title={character.name}
+              >
+                {character.name}
+              </h3>
 
-            {/* 2. Nickname: hiển thị dưới tên nhân vật, kích thước nhỏ hơn */}
+              {/* Heart ❤️ Favorite Badge Button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleFavorite?.(character);
+                }}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all cursor-pointer shadow-2xs shrink-0 ${
+                  isFavorited
+                    ? 'bg-rose-50 border-rose-200 text-rose-600 font-bold hover:bg-rose-100'
+                    : 'bg-white/90 border-white text-[#493B55] hover:bg-[#FFF0F5] hover:text-rose-500'
+                }`}
+                title={isFavorited ? 'Bỏ yêu thích nhân vật này' : 'Yêu thích nhân vật này'}
+              >
+                <Heart
+                  className={`w-3.5 h-3.5 transition-transform ${
+                    isFavorited ? 'fill-rose-500 text-rose-500 scale-110' : 'text-[#865B9E]'
+                  }`}
+                />
+                <span className="text-xs font-bold">{totalFavorites}</span>
+              </button>
+            </div>
+
+            {/* 2. Nickname: hiển thị dưới tên nhân vật */}
             {character.nickname ? (
               <p className="text-xs text-[#55445F]/85 italic truncate mt-0.5 font-serif">
                 "{character.nickname}"
@@ -93,7 +123,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
               </p>
             ) : null}
 
-            {/* 3. Tags / Nhãn: nhỏ gọn bo góc mềm mại, màu sắc hài hòa */}
+            {/* 3. Tags / Nhãn */}
             <div className="flex flex-wrap gap-1.5 mt-2">
               {character.tags && character.tags.length > 0 ? (
                 character.tags.slice(0, 3).map((tag) => (
@@ -125,7 +155,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
           </div>
         </div>
 
-        {/* 4. Mô tả / Cốt truyện tóm tắt: font rõ nét, màu tối dễ đọc, ngắt dòng hợp lý */}
+        {/* 4. Mô tả / Cốt truyện tóm tắt */}
         <div className="mt-3.5">
           <p className="text-xs text-[#493B55] leading-relaxed line-clamp-3 sm:line-clamp-4 font-normal">
             {summaryText}

@@ -96,12 +96,12 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => handleNavClick('reviews')}
             className={`px-3.5 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all cursor-pointer flex items-center gap-1.5 ${
               currentView === 'reviews'
-                ? 'bg-[#865B9E] text-white shadow-xs'
+                ? 'bg-[#D88CA3] text-white shadow-xs'
                 : 'text-[#6E5C65] hover:text-[#51434A] hover:bg-[#FFF5F7]'
             }`}
           >
-            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-            <span>Đánh giá</span>
+            <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
+            <span>Yêu thích</span>
           </button>
 
           <button
@@ -276,11 +276,11 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={() => handleNavClick('reviews')}
             className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center justify-between ${
-              currentView === 'reviews' ? 'bg-[#E8D7F7] text-[#493B55] font-semibold' : 'text-[#6E5C65]'
+              currentView === 'reviews' ? 'bg-[#FBE6ED] text-[#51434A] font-semibold' : 'text-[#6E5C65]'
             }`}
           >
-            <span>Đánh giá nhân vật</span>
-            <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
+            <span>Nhân vật Yêu thích</span>
+            <Heart className="w-4 h-4 text-rose-500 fill-rose-500" />
           </button>
 
           <button

@@ -26,7 +26,7 @@ import { CharacterReviewsAdmin } from './CharacterReviewsAdmin';
 import { CharacterHotRankingAdmin } from './CharacterHotRankingAdmin';
 import { useAuth } from '../../context/AuthContext';
 import { saveCharacter, deleteCharacter, duplicateCharacter } from '../../services/storage';
-import { Music, Crown, Tag, Star, Flame } from 'lucide-react';
+import { Music, Crown, Tag, Star, Flame, Heart } from 'lucide-react';
 
 interface AdminDashboardProps {
   characters: Character[];
@@ -240,8 +240,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
               }`}
             >
-              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-              <span>Đánh giá & Feedback</span>
+              <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
+              <span>Quản lý Yêu thích ❤️</span>
             </button>
 
             <button

@@ -12,7 +12,8 @@ import {
   Info,
   BookOpen,
   ScrollText,
-  Share2
+  Share2,
+  Heart
 } from 'lucide-react';
 import { Character } from '../../types/character';
 import { generateCharacterPrompt, isValidHttpsUrl } from '../../services/promptGenerator';
@@ -25,7 +26,9 @@ interface CharacterModalProps {
   onViewChat: (character: Character) => void;
   onShowToast: (type: 'success' | 'error' | 'info', title: string, message?: string) => void;
   onSelectTag?: (tag: string) => void;
-  onNavigateToReviews?: (characterId: string) => void;
+  isFavorited?: boolean;
+  totalFavorites?: number;
+  onToggleFavorite?: (character: Character) => void;
 }
 
 export const CharacterModal: React.FC<CharacterModalProps> = ({
@@ -36,7 +39,9 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
   onViewChat,
   onShowToast,
   onSelectTag,
-  onNavigateToReviews,
+  isFavorited = false,
+  totalFavorites = 0,
+  onToggleFavorite,
 }) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'roleplay' | 'prompt'>('profile');
   const [copied, setCopied] = useState(false);
@@ -477,17 +482,22 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
           </button>
 
           <div className="flex items-center gap-2">
-            {onNavigateToReviews && (
+            {onToggleFavorite && (
               <button
-                onClick={() => {
-                  onClose();
-                  onNavigateToReviews(character.id);
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#FFF5F7] border border-[#E9A9BB] text-xs font-medium text-[#774D8E] hover:bg-[#FBE6ED] transition-all"
-                title="Viết đánh giá cho nhân vật này"
+                onClick={() => onToggleFavorite(character)}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full border text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                  isFavorited
+                    ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100'
+                    : 'bg-[#FFF5F7] border-[#E9A9BB] text-[#774D8E] hover:bg-[#FBE6ED]'
+                }`}
+                title={isFavorited ? 'Bỏ yêu thích nhân vật này' : 'Thêm vào danh sách yêu thích'}
               >
-                <Sparkles className="w-3.5 h-3.5 text-[#D88CA3]" />
-                <span>Đánh giá</span>
+                <Heart
+                  className={`w-3.5 h-3.5 transition-transform ${
+                    isFavorited ? 'fill-rose-500 text-rose-500 scale-110' : 'text-[#D88CA3]'
+                  }`}
+                />
+                <span>{isFavorited ? 'Đã yêu thích' : 'Yêu thích'} ({totalFavorites})</span>
               </button>
             )}
             <button

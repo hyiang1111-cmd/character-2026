@@ -2,64 +2,93 @@ import React, { useState, useEffect } from 'react';
 import {
   Flame,
   Crown,
-  Star,
+  Heart,
   MessageSquare,
-  Eye,
   Sparkles,
   Trophy,
-  ChevronRight,
-  TrendingUp,
-  Award
+  Award,
+  TrendingUp
 } from 'lucide-react';
 import { Character } from '../../types/character';
 import {
-  HotCharacterRanked,
-  computeHotRankingList,
-  getRankingSettings,
-  RankingSettings,
-  DEFAULT_RANKING_SETTINGS
-} from '../../services/characterRankingStorage';
+  getAllFavoriteCounts,
+  getUserFavorites,
+  toggleCharacterFavorite,
+  computeFavoriteRankingList,
+  FavoriteRankedCharacter,
+} from '../../services/characterFavoritesStorage';
+import { useCommunity } from '../../context/CommunityContext';
 
 interface CharacterHotRankingProps {
   characters: Character[];
   onOpenDetails: (character: Character) => void;
-  onNavigateToReviews?: () => void;
+  onOpenAuth?: (mode?: 'login' | 'register') => void;
 }
 
 export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
   characters,
   onOpenDetails,
-  onNavigateToReviews,
+  onOpenAuth,
 }) => {
-  const [rankedList, setRankedList] = useState<HotCharacterRanked[]>([]);
-  const [settings, setSettings] = useState<RankingSettings>(DEFAULT_RANKING_SETTINGS);
+  const { member } = useCommunity();
+  const [rankedList, setRankedList] = useState<FavoriteRankedCharacter[]>([]);
+  const [favoriteCounts, setFavoriteCounts] = useState<Record<string, number>>({});
+  const [userFavList, setUserFavList] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Filter published characters
+  // Published characters only
   const publishedChars = characters.filter((c) => c.status === 'published');
 
-  const loadRanking = async () => {
+  const loadData = async () => {
     setIsLoading(true);
     try {
-      const [currentSettings, topList] = await Promise.all([
-        getRankingSettings(),
-        computeHotRankingList(publishedChars),
+      const [counts, userFavs] = await Promise.all([
+        getAllFavoriteCounts(),
+        getUserFavorites(member?.id),
       ]);
-      setSettings(currentSettings);
+      setFavoriteCounts(counts);
+      setUserFavList(userFavs);
+
+      const topList = computeFavoriteRankingList(publishedChars, counts);
       setRankedList(topList);
     } catch (e) {
-      console.error('Failed to load hot ranking:', e);
+      console.error('Failed to load favorite ranking:', e);
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    loadRanking();
-  }, [characters]);
+    loadData();
 
-  // If disabled by Admin or empty, don't display
-  if (!settings.is_ranking_enabled || rankedList.length === 0) {
+    const handleFavoritesUpdated = () => {
+      loadData();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pca_favorites_updated', handleFavoritesUpdated);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('pca_favorites_updated', handleFavoritesUpdated);
+      }
+    };
+  }, [characters, member?.id]);
+
+  const handleToggleFav = async (char: Character, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!member) {
+      onOpenAuth?.('login');
+      return;
+    }
+    try {
+      await toggleCharacterFavorite(char.id, member.id);
+    } catch (err: any) {
+      alert(err?.message || 'Không thể cập nhật yêu thích.');
+    }
+  };
+
+  if (publishedChars.length === 0 || rankedList.length === 0) {
     return null;
   }
 
@@ -73,30 +102,30 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
 
   return (
     <section className="relative overflow-hidden pt-8 pb-14 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-      {/* Decorative ambient background glow */}
+      {/* Ambient background glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl h-96 bg-gradient-to-r from-[#F6DCE5]/40 via-[#F3E5F5]/50 to-[#E8D7F7]/40 blur-3xl -z-10 rounded-full pointer-events-none" />
 
       {/* Section Header */}
       <div className="text-center max-w-2xl mx-auto mb-10">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/10 via-rose-500/10 to-purple-500/10 border border-[#E9A9BB]/60 text-xs font-bold text-[#865B9E] mb-3 shadow-2xs">
-          <Flame className="w-4 h-4 text-amber-500 fill-amber-500 animate-pulse" />
-          <span>BẢNG XẾP HẠNG NHÂN VẬT NỔI BẬT</span>
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-rose-500/10 via-pink-500/10 to-purple-500/10 border border-[#E9A9BB]/60 text-xs font-bold text-[#865B9E] mb-3 shadow-2xs">
+          <Heart className="w-4 h-4 text-rose-500 fill-rose-500 animate-pulse" />
+          <span>BẢNG XẾP HẠNG NHÂN VẬT ĐƯỢC YÊU THÍCH NHẤT</span>
         </div>
 
         <h2 className="font-serif-title text-3xl sm:text-4xl md:text-5xl font-bold text-[#51434A] tracking-tight">
-          Character Hot Ranking
+          Most Loved Characters
         </h2>
 
         <p className="text-xs sm:text-sm text-[#6E5C65] font-light mt-2 max-w-lg mx-auto leading-relaxed">
-          Vinh danh những persona được yêu thích nhất dựa trên đánh giá thực tế, điểm sao và mức độ quan tâm từ cộng đồng.
+          Vinh danh những persona nhận được nhiều lượt yêu thích ❤️ nhất từ cộng đồng người dùng Character Archive.
         </p>
       </div>
 
-      {/* PODIUM TRIANGLE: TOP 1, 2, 3 */}
+      {/* PODIUM TRIANGLE: TOP 1 CENTER, TOP 2 LEFT, TOP 3 RIGHT */}
       {top1 && (
         <div className="max-w-4xl mx-auto mb-12">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-            {/* TOP 2 (Left on Desktop, Elevated rank 2) */}
+            {/* TOP 2 (Left on Desktop) */}
             {top2 ? (
               <div
                 onClick={() => onOpenDetails(top2.character)}
@@ -108,7 +137,7 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                   <span>TOP 2</span>
                 </div>
 
-                {/* Avatar with Double White Ring */}
+                {/* Avatar */}
                 <div className="mt-2 mb-3 p-1 rounded-full bg-white/80 border-2 border-white ring-2 ring-[#D8C7E2] shadow-sm group-hover:scale-105 transition-transform">
                   <img
                     src={top2.character.avatarUrl || top2.character.portraitUrl}
@@ -125,32 +154,32 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                   {top2.character.category || 'Persona'}
                 </p>
 
-                {/* Stats */}
-                <div className="w-full mt-3 pt-3 border-t border-white/60 flex items-center justify-around text-xs">
-                  <div>
-                    <div className="flex items-center justify-center gap-1 text-amber-500 font-bold">
-                      <Star className="w-3.5 h-3.5 fill-amber-400" />
-                      <span>{top2.metrics.average_rating.toFixed(1)}</span>
-                    </div>
-                    <span className="text-[10px] text-[#8E7A84] block">
-                      {top2.metrics.total_reviews} reviews
-                    </span>
-                  </div>
-
-                  <div className="h-6 w-px bg-white/60" />
-
-                  <div>
-                    <div className="flex items-center justify-center gap-1 text-[#865B9E] font-bold">
-                      <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                      <span>{Math.round(top2.metrics.hot_score)}</span>
-                    </div>
-                    <span className="text-[10px] text-[#8E7A84] block">Hot Score</span>
-                  </div>
+                {/* Favorite Heart Button & Count */}
+                <div className="w-full mt-3 pt-3 border-t border-white/60 flex items-center justify-between text-xs px-2">
+                  <span className="text-[11px] text-[#8E7A84] font-medium">Lượt yêu thích:</span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleToggleFav(top2.character, e)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold transition-all shadow-2xs ${
+                      userFavList.includes(top2.character.id)
+                        ? 'bg-rose-50 border-rose-200 text-rose-600'
+                        : 'bg-white border-white text-[#493B55] hover:text-rose-500'
+                    }`}
+                  >
+                    <Heart
+                      className={`w-3.5 h-3.5 ${
+                        userFavList.includes(top2.character.id)
+                          ? 'fill-rose-500 text-rose-500'
+                          : 'text-[#865B9E]'
+                      }`}
+                    />
+                    <span>{top2.totalFavorites}</span>
+                  </button>
                 </div>
               </div>
             ) : <div className="hidden md:block order-1" />}
 
-            {/* TOP 1 (Center on Desktop, Elevated, Crown & Gold Accent) */}
+            {/* TOP 1 (Center on Desktop, Crown & Gold Accent) */}
             <div
               onClick={() => onOpenDetails(top1.character)}
               className="group relative cursor-pointer rounded-3xl p-6 sm:p-7 bg-gradient-to-b from-[#FFFDF0] via-[#FFF9E6] to-[#FFEFC2] border-2 border-[#FFD700] shadow-[0_12px_35px_rgba(255,215,0,0.28)] hover:shadow-[0_18px_45px_rgba(255,215,0,0.38)] hover:-translate-y-2 transition-all duration-300 flex flex-col items-center text-center order-1 md:order-2 z-10 scale-105"
@@ -166,7 +195,7 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                 <span>QUÁN QUÂN • TOP 1</span>
               </div>
 
-              {/* Avatar with Regal Double Gold/White Ring */}
+              {/* Avatar */}
               <div className="mt-1 mb-3.5 p-1.5 rounded-full bg-white border-2 border-white ring-4 ring-[#FFD700]/70 shadow-md group-hover:scale-105 transition-transform">
                 <img
                   src={top1.character.avatarUrl || top1.character.portraitUrl}
@@ -183,33 +212,31 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                 {top1.character.category || 'Persona'} • {top1.character.occupation || 'Archive Legend'}
               </p>
 
-              {/* Hot Score & Rating Stats */}
-              <div className="w-full mt-4 pt-3.5 border-t border-amber-200/60 flex items-center justify-around text-xs">
-                <div>
-                  <div className="flex items-center justify-center gap-1 text-amber-600 font-extrabold text-sm sm:text-base">
-                    <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
-                    <span>{top1.metrics.average_rating.toFixed(1)}</span>
-                  </div>
-                  <span className="text-[10px] text-[#8E7A84] block mt-0.5">
-                    {top1.metrics.total_reviews} đánh giá
-                  </span>
-                </div>
-
-                <div className="h-8 w-px bg-amber-200/80" />
-
-                <div>
-                  <div className="flex items-center justify-center gap-1 text-amber-600 font-extrabold text-sm sm:text-base">
-                    <Flame className="w-4 h-4 text-amber-500 fill-amber-500" />
-                    <span>{Math.round(top1.metrics.hot_score)}</span>
-                  </div>
-                  <span className="text-[10px] text-[#8E7A84] block mt-0.5 font-semibold">
-                    Hot Score 🔥
-                  </span>
-                </div>
+              {/* Favorite Heart Button & Count */}
+              <div className="w-full mt-4 pt-3.5 border-t border-amber-200/60 flex items-center justify-between text-xs px-2">
+                <span className="text-xs text-[#8E7A84] font-bold">Yêu thích nhất:</span>
+                <button
+                  type="button"
+                  onClick={(e) => handleToggleFav(top1.character, e)}
+                  className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-xs font-bold transition-all shadow-sm ${
+                    userFavList.includes(top1.character.id)
+                      ? 'bg-rose-50 border-rose-300 text-rose-600'
+                      : 'bg-white border-amber-300 text-amber-800 hover:text-rose-500'
+                  }`}
+                >
+                  <Heart
+                    className={`w-4 h-4 ${
+                      userFavList.includes(top1.character.id)
+                        ? 'fill-rose-500 text-rose-500 scale-110'
+                        : 'text-amber-500'
+                    }`}
+                  />
+                  <span className="text-sm">{top1.totalFavorites} ❤️</span>
+                </button>
               </div>
             </div>
 
-            {/* TOP 3 (Right on Desktop, Elevated rank 3) */}
+            {/* TOP 3 (Right on Desktop) */}
             {top3 ? (
               <div
                 onClick={() => onOpenDetails(top3.character)}
@@ -221,7 +248,7 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                   <span>TOP 3</span>
                 </div>
 
-                {/* Avatar with Double White Ring */}
+                {/* Avatar */}
                 <div className="mt-2 mb-3 p-1 rounded-full bg-white/80 border-2 border-white ring-2 ring-[#F1C0CE] shadow-sm group-hover:scale-105 transition-transform">
                   <img
                     src={top3.character.avatarUrl || top3.character.portraitUrl}
@@ -238,27 +265,27 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                   {top3.character.category || 'Persona'}
                 </p>
 
-                {/* Stats */}
-                <div className="w-full mt-3 pt-3 border-t border-white/60 flex items-center justify-around text-xs">
-                  <div>
-                    <div className="flex items-center justify-center gap-1 text-amber-500 font-bold">
-                      <Star className="w-3.5 h-3.5 fill-amber-400" />
-                      <span>{top3.metrics.average_rating.toFixed(1)}</span>
-                    </div>
-                    <span className="text-[10px] text-[#8E7A84] block">
-                      {top3.metrics.total_reviews} reviews
-                    </span>
-                  </div>
-
-                  <div className="h-6 w-px bg-white/60" />
-
-                  <div>
-                    <div className="flex items-center justify-center gap-1 text-[#D88CA3] font-bold">
-                      <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                      <span>{Math.round(top3.metrics.hot_score)}</span>
-                    </div>
-                    <span className="text-[10px] text-[#8E7A84] block">Hot Score</span>
-                  </div>
+                {/* Favorite Heart Button & Count */}
+                <div className="w-full mt-3 pt-3 border-t border-white/60 flex items-center justify-between text-xs px-2">
+                  <span className="text-[11px] text-[#8E7A84] font-medium">Lượt yêu thích:</span>
+                  <button
+                    type="button"
+                    onClick={(e) => handleToggleFav(top3.character, e)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold transition-all shadow-2xs ${
+                      userFavList.includes(top3.character.id)
+                        ? 'bg-rose-50 border-rose-200 text-rose-600'
+                        : 'bg-white border-white text-[#493B55] hover:text-rose-500'
+                    }`}
+                  >
+                    <Heart
+                      className={`w-3.5 h-3.5 ${
+                        userFavList.includes(top3.character.id)
+                          ? 'fill-rose-500 text-rose-500'
+                          : 'text-[#D88CA3]'
+                      }`}
+                    />
+                    <span>{top3.totalFavorites}</span>
+                  </button>
                 </div>
               </div>
             ) : <div className="hidden md:block order-3" />}
@@ -274,16 +301,6 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
               <TrendingUp className="w-4 h-4 text-[#865B9E]" />
               <span>Hạng 4 đến Hạng {rankedList.length}</span>
             </span>
-
-            {onNavigateToReviews && (
-              <button
-                onClick={onNavigateToReviews}
-                className="text-xs text-[#865B9E] hover:underline font-semibold flex items-center gap-1"
-              >
-                <span>Xem tất cả đánh giá</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            )}
           </div>
 
           <div className="divide-y divide-[#F1D4DF]/60">
@@ -295,12 +312,10 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
               >
                 {/* Left: Rank & Avatar & Full Name */}
                 <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
-                  {/* Rank Number Badge */}
                   <span className="w-7 sm:w-8 h-7 sm:h-8 rounded-xl bg-[#FFF5F7] text-[#865B9E] font-black text-xs sm:text-sm flex items-center justify-center border border-[#F1D4DF] shadow-2xs shrink-0 group-hover:bg-[#E9A9BB] group-hover:text-white transition-colors">
                     #{item.rank}
                   </span>
 
-                  {/* Avatar */}
                   <div className="p-0.5 rounded-full bg-white border border-white ring-2 ring-[#E9A9BB]/40 shadow-2xs shrink-0">
                     <img
                       src={item.character.avatarUrl || item.character.portraitUrl}
@@ -309,7 +324,6 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                     />
                   </div>
 
-                  {/* Full Name & Category */}
                   <div className="min-w-0">
                     <h4 className="font-serif-title font-bold text-xs sm:text-sm text-[#51434A] group-hover:text-[#865B9E] transition-colors truncate">
                       {item.character.fullName || item.character.name}
@@ -320,27 +334,26 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                   </div>
                 </div>
 
-                {/* Right: Rating & Hot Score */}
-                <div className="flex items-center gap-4 sm:gap-6 shrink-0 text-right">
-                  {/* Average Rating */}
-                  <div>
-                    <div className="flex items-center justify-end gap-1 text-amber-500 font-bold text-xs sm:text-sm">
-                      <Star className="w-3.5 h-3.5 fill-amber-400" />
-                      <span>{item.metrics.average_rating.toFixed(1)}</span>
-                    </div>
-                    <span className="text-[10px] text-[#8E7A84] block">
-                      {item.metrics.total_reviews} reviews
-                    </span>
-                  </div>
-
-                  {/* Hot Score */}
-                  <div className="min-w-[70px]">
-                    <div className="flex items-center justify-end gap-1 text-[#D88CA3] font-bold text-xs sm:text-sm">
-                      <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                      <span>{Math.round(item.metrics.hot_score)}</span>
-                    </div>
-                    <span className="text-[10px] text-[#8E7A84] block">Hot Score</span>
-                  </div>
+                {/* Right: Favorite Button & Total Favorites */}
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => handleToggleFav(item.character, e)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold transition-all shadow-2xs ${
+                      userFavList.includes(item.character.id)
+                        ? 'bg-rose-50 border-rose-200 text-rose-600'
+                        : 'bg-white border-[#F1D4DF] text-[#51434A] hover:border-rose-200 hover:text-rose-500'
+                    }`}
+                  >
+                    <Heart
+                      className={`w-3.5 h-3.5 ${
+                        userFavList.includes(item.character.id)
+                          ? 'fill-rose-500 text-rose-500'
+                          : 'text-[#865B9E]'
+                      }`}
+                    />
+                    <span>{item.totalFavorites}</span>
+                  </button>
                 </div>
               </div>
             ))}

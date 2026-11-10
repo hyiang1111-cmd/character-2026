@@ -412,15 +412,29 @@ export async function getCharacterReviews(
   const client = getSupabaseClient();
   if (client) {
     try {
+      // 1. If public non-hidden query requested, try RPC first
+      if (!includeHidden) {
+        const { data: rpcData, error: rpcErr } = await client.rpc('get_public_character_reviews', {
+          p_character_id: characterId || null,
+        });
+
+        if (!rpcErr && Array.isArray(rpcData)) {
+          return rpcData as CharacterReview[];
+        } else if (rpcErr) {
+          console.warn('RPC get_public_character_reviews notice, using direct select fallback:', rpcErr.message);
+        }
+      }
+
+      // 2. Direct select fallback or Admin includeHidden query
       let query = client.from('character_reviews').select('*').order('created_at', { ascending: false });
       if (characterId) {
         query = query.eq('character_id', characterId);
       }
       if (!includeHidden) {
-        query = query.or('is_hidden.eq.false,is_hidden.is.null');
+        query = query.neq('is_hidden', true);
       }
       const { data, error } = await query;
-      if (!error && data) {
+      if (!error && Array.isArray(data)) {
         return data as CharacterReview[];
       } else if (error) {
         console.warn('Supabase character_reviews select notice:', error.message);

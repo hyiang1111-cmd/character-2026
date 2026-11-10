@@ -37,6 +37,11 @@ import {
   getCharacterTags,
   CharacterTagRecord
 } from './services/characterRankingStorage';
+import {
+  getAllFavoriteCounts,
+  getUserFavorites,
+  toggleCharacterFavorite
+} from './services/characterFavoritesStorage';
 import { setSharedSupabaseCredentials, getSupabaseClient } from './services/supabase';
 import { isValidHttpsUrl } from './services/promptGenerator';
 import { Sparkles, BookOpen, Layers, Search, X } from 'lucide-react';
@@ -81,6 +86,62 @@ function AppContent() {
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Favorites state
+  const [favoriteCounts, setFavoriteCounts] = useState<Record<string, number>>({});
+  const [userFavList, setUserFavList] = useState<string[]>([]);
+  const { member } = useCommunity();
+
+  const loadFavorites = async () => {
+    try {
+      const [counts, userFavs] = await Promise.all([
+        getAllFavoriteCounts(),
+        getUserFavorites(member?.id),
+      ]);
+      setFavoriteCounts(counts);
+      setUserFavList(userFavs);
+    } catch (e) {
+      console.warn('Failed to load favorites in App:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadFavorites();
+
+    const handleFavoritesUpdated = () => {
+      loadFavorites();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pca_favorites_updated', handleFavoritesUpdated);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('pca_favorites_updated', handleFavoritesUpdated);
+      }
+    };
+  }, [member?.id]);
+
+  const handleToggleFavorite = async (character: Character) => {
+    if (!member) {
+      setAuthModalMode('login');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    try {
+      const res = await toggleCharacterFavorite(character.id, member.id);
+      showToast(
+        'success',
+        res.isFavorited ? 'Đã yêu thích ❤️' : 'Bỏ yêu thích',
+        res.isFavorited
+          ? `Bạn đã thêm ${character.name} vào danh sách yêu thích!`
+          : `Đã bỏ yêu thích ${character.name}`
+      );
+      await loadFavorites();
+    } catch (err: any) {
+      showToast('error', 'Lỗi yêu thích', err?.message);
+    }
+  };
 
   const navigateView = (view: AppView) => {
     setCurrentView(view);
@@ -616,11 +677,9 @@ function AppContent() {
           onViewChat={handleViewChat}
           onShowToast={showToast}
           onSelectTag={handleSelectTag}
-          onNavigateToReviews={(charId) => {
-            setReviewTargetCharacterId(charId);
-            navigateView('reviews');
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
+          isFavorited={selectedCharacterModal ? userFavList.includes(selectedCharacterModal.id) : false}
+          totalFavorites={selectedCharacterModal ? (favoriteCounts[selectedCharacterModal.id] || 0) : 0}
+          onToggleFavorite={handleToggleFavorite}
         />
         <ScenarioModal
           character={selectedScenarioModal}
@@ -678,9 +737,9 @@ function AppContent() {
               <CharacterHotRanking
                 characters={publishedCharacters}
                 onOpenDetails={handleOpenCharacterDetails}
-                onNavigateToReviews={() => {
-                  navigateView('reviews');
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                onOpenAuth={(mode) => {
+                  setAuthModalMode(mode || 'login');
+                  setIsAuthModalOpen(true);
                 }}
               />
             </div>
@@ -724,6 +783,9 @@ function AppContent() {
                         onStartChat={handleStartChat}
                         onViewChat={handleViewChat}
                         onSelectTag={handleSelectTag}
+                        isFavorited={userFavList.includes(char.id)}
+                        totalFavorites={favoriteCounts[char.id] || 0}
+                        onToggleFavorite={handleToggleFavorite}
                       />
                     ))}
                   </div>
@@ -828,6 +890,9 @@ function AppContent() {
                       onStartChat={handleStartChat}
                       onViewChat={handleViewChat}
                       onSelectTag={handleSelectTag}
+                      isFavorited={userFavList.includes(char.id)}
+                      totalFavorites={favoriteCounts[char.id] || 0}
+                      onToggleFavorite={handleToggleFavorite}
                     />
                   ))}
                 </div>
@@ -895,11 +960,9 @@ function AppContent() {
         onViewChat={handleViewChat}
         onShowToast={showToast}
         onSelectTag={handleSelectTag}
-        onNavigateToReviews={(charId) => {
-          setReviewTargetCharacterId(charId);
-          navigateView('reviews');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
+        isFavorited={selectedCharacterModal ? userFavList.includes(selectedCharacterModal.id) : false}
+        totalFavorites={selectedCharacterModal ? (favoriteCounts[selectedCharacterModal.id] || 0) : 0}
+        onToggleFavorite={handleToggleFavorite}
       />
 
       <ScenarioModal
