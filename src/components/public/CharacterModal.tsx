@@ -11,8 +11,7 @@ import {
   ShieldAlert,
   Info,
   BookOpen,
-  ScrollText,
-  Flame
+  ScrollText
 } from 'lucide-react';
 import { Character } from '../../types/character';
 import { generateCharacterPrompt, isValidHttpsUrl } from '../../services/promptGenerator';
@@ -25,7 +24,6 @@ interface CharacterModalProps {
   onViewChat: (character: Character) => void;
   onShowToast: (type: 'success' | 'error' | 'info', title: string, message?: string) => void;
   onSelectTag?: (tag: string) => void;
-  totalChats?: number;
 }
 
 export const CharacterModal: React.FC<CharacterModalProps> = ({
@@ -36,7 +34,6 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
   onViewChat,
   onShowToast,
   onSelectTag,
-  totalChats = 0,
 }) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'roleplay' | 'prompt'>('profile');
   const [copied, setCopied] = useState(false);
@@ -84,13 +81,6 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
                 {character.category}
               </span>
             )}
-            <div
-              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-amber-700 text-xs font-semibold"
-              title={`Tổng lượt mở cuộc trò chuyện: ${totalChats}`}
-            >
-              <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
-              <span className="font-mono tabular-nums">{totalChats} lượt mở chat</span>
-            </div>
             {hasValidViewerLink && (
               <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full bg-[#E9A9BB] text-white text-[10px] font-bold">
                 VIEWER ACCESS ENABLED
@@ -100,7 +90,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full bg-[#FFF5F7] hover:bg-[#FBE6ED] text-[#8E7A84] hover:text-[#51434A] transition-colors"
+            className="p-1.5 rounded-full bg-[#FFF5F7] hover:bg-[#FBE6ED] text-[#8E7A84] hover:text-[#51434A] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>

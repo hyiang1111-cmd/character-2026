@@ -233,27 +233,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </button>
 
             <button
-              onClick={() => setActiveTab('reviews')}
-              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'reviews'
-                  ? 'border-[#E9A9BB] text-[#51434A] font-bold'
-                  : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
-              }`}
-            >
-              <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-              <span>Thống kê Chat Opens 🔥</span>
-            </button>
-
-            <button
               onClick={() => setActiveTab('hot_ranking')}
               className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                activeTab === 'hot_ranking'
+                activeTab === 'hot_ranking' || activeTab === 'reviews'
                   ? 'border-[#E9A9BB] text-[#51434A] font-bold'
                   : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
               }`}
             >
-              <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-              <span>Cấu hình BXH Hot</span>
+              <Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+              <span>Quản lý BXH Nhân Vật 👑</span>
             </button>
 
             <button
@@ -396,15 +384,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               />
             )}
 
-            {activeTab === 'reviews' && (
-              <CharacterReviewsAdmin
-                characters={characters}
-                onRefreshData={onRefreshData}
-                onShowToast={onShowToast}
-              />
-            )}
-
-            {activeTab === 'hot_ranking' && (
+            {(activeTab === 'reviews' || activeTab === 'hot_ranking') && (
               <CharacterHotRankingAdmin
                 characters={characters}
                 onRefreshData={onRefreshData}

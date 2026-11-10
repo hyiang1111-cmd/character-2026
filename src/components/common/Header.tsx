@@ -100,8 +100,8 @@ export const Header: React.FC<HeaderProps> = ({
                 : 'text-[#6E5C65] hover:text-[#51434A] hover:bg-[#FFF5F7]'
             }`}
           >
-            <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-            <span>Hot Chat 🔥</span>
+            <Crown className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+            <span>BXH Nổi Bật</span>
           </button>
 
           <button
@@ -279,8 +279,8 @@ export const Header: React.FC<HeaderProps> = ({
               currentView === 'reviews' ? 'bg-[#FBE6ED] text-[#51434A] font-semibold' : 'text-[#6E5C65]'
             }`}
           >
-            <span>Nhân vật Hot Chat 🔥</span>
-            <Flame className="w-4 h-4 text-amber-500 fill-amber-400" />
+            <span>Bảng Xếp Hạng Nổi Bật 👑</span>
+            <Crown className="w-4 h-4 text-amber-500 fill-amber-400" />
           </button>
 
           <button

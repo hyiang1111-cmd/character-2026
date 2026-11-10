@@ -247,17 +247,10 @@ function AppContent() {
     recordVerifiedCharacterView(char.id);
   };
 
-  // Direct Google AI Studio Chat action with atomic deduplicated chat open counter
+  // Direct Google AI Studio Chat action
   const handleStartChat = async (character: Character) => {
     recordChatClick(character.id);
     recordVerifiedCharacterChat(character.id);
-
-    // Atomically increment chat open counter with unique event token
-    try {
-      await recordCharacterChatOpen(character.id);
-    } catch (e) {
-      console.warn('Failed to record chat open event:', e);
-    }
 
     if (character.chatUrl && isValidHttpsUrl(character.chatUrl)) {
       window.open(character.chatUrl, '_blank', 'noopener,noreferrer');
@@ -455,7 +448,6 @@ function AppContent() {
             onViewChat={handleViewChat}
             onShowToast={showToast}
             onSelectTag={handleSelectTag}
-            totalChats={selectedCharacterModal ? (chatOpenCounts[selectedCharacterModal.id] || 0) : 0}
           />
           <ScenarioModal
             character={selectedScenarioModal}
@@ -525,7 +517,6 @@ function AppContent() {
             onViewChat={handleViewChat}
             onShowToast={showToast}
             onSelectTag={handleSelectTag}
-            totalChats={selectedCharacterModal ? (chatOpenCounts[selectedCharacterModal.id] || 0) : 0}
           />
           <ScenarioModal
             character={selectedScenarioModal}
@@ -653,7 +644,6 @@ function AppContent() {
           onViewChat={handleViewChat}
           onShowToast={showToast}
           onSelectTag={handleSelectTag}
-          totalChats={selectedCharacterModal ? (chatOpenCounts[selectedCharacterModal.id] || 0) : 0}
         />
         <ScenarioModal
           character={selectedScenarioModal}
@@ -754,7 +744,6 @@ function AppContent() {
                         onStartChat={handleStartChat}
                         onViewChat={handleViewChat}
                         onSelectTag={handleSelectTag}
-                        totalChats={chatOpenCounts[char.id] || 0}
                       />
                     ))}
                   </div>
@@ -859,7 +848,6 @@ function AppContent() {
                       onStartChat={handleStartChat}
                       onViewChat={handleViewChat}
                       onSelectTag={handleSelectTag}
-                      totalChats={chatOpenCounts[char.id] || 0}
                     />
                   ))}
                 </div>
@@ -928,7 +916,6 @@ function AppContent() {
         onViewChat={handleViewChat}
         onShowToast={showToast}
         onSelectTag={handleSelectTag}
-        totalChats={selectedCharacterModal ? (chatOpenCounts[selectedCharacterModal.id] || 0) : 0}
       />
 
       <ScenarioModal

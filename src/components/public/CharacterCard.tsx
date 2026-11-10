@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExternalLink, MessageSquare, User, BookOpen, Flame } from 'lucide-react';
+import { ExternalLink, MessageSquare, User, BookOpen } from 'lucide-react';
 import { Character } from '../../types/character';
 import { isValidHttpsUrl } from '../../services/promptGenerator';
 
@@ -10,7 +10,6 @@ interface CharacterCardProps {
   onStartChat: (character: Character) => void;
   onViewChat?: (character: Character) => void;
   onSelectTag?: (tag: string) => void;
-  totalChats?: number;
 }
 
 export const CharacterCard: React.FC<CharacterCardProps> = ({
@@ -19,7 +18,6 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
   onOpenScenario,
   onStartChat,
   onSelectTag,
-  totalChats = 0,
 }) => {
   const avatar = character.avatarUrl || character.portraitUrl;
   const hasValidChatUrl = Boolean(character.chatUrl && isValidHttpsUrl(character.chatUrl));
@@ -73,7 +71,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
             </div>
           </div>
 
-          {/* Content on Right: 1. Name & Chat Opens Badge, 2. Nickname, 3. Tags */}
+          {/* Content on Right: 1. Name, 2. Nickname/Species, 3. Tags */}
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-1.5">
               {/* 1. Tên nhân vật */}
@@ -84,15 +82,6 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
               >
                 {character.name}
               </h3>
-
-              {/* Flame 🔥 Chat Opens Count Badge */}
-              <div
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 text-amber-700 shadow-2xs shrink-0"
-                title={`Tổng lượt mở cuộc trò chuyện: ${totalChats}`}
-              >
-                <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
-                <span className="text-xs font-bold font-mono tabular-nums">{totalChats}</span>
-              </div>
             </div>
 
             {/* 2. Nickname: hiển thị dưới tên nhân vật */}
