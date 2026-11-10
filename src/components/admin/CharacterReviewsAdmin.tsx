@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Heart,
+  Flame,
   Search,
   Trophy,
   User,
@@ -10,10 +10,10 @@ import {
 } from 'lucide-react';
 import { Character } from '../../types/character';
 import {
-  getAllFavoriteCounts,
-  computeFavoriteRankingList,
-  FavoriteRankedCharacter
-} from '../../services/characterFavoritesStorage';
+  getChatOpenCounts,
+  computeChatOpensRankingList,
+  ChatOpensRankedCharacter
+} from '../../services/characterChatOpensStorage';
 
 interface CharacterReviewsAdminProps {
   characters: Character[];
@@ -26,15 +26,15 @@ export const CharacterReviewsAdmin: React.FC<CharacterReviewsAdminProps> = ({
   onRefreshData,
   onShowToast,
 }) => {
-  const [favoriteCounts, setFavoriteCounts] = useState<Record<string, number>>({});
+  const [chatCounts, setChatCounts] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const counts = await getAllFavoriteCounts();
-      setFavoriteCounts(counts);
+      const counts = await getChatOpenCounts();
+      setChatCounts(counts);
     } catch {
       // Fallback
     } finally {
@@ -47,12 +47,12 @@ export const CharacterReviewsAdmin: React.FC<CharacterReviewsAdminProps> = ({
   }, [characters]);
 
   const rankings = useMemo(() => {
-    return computeFavoriteRankingList(characters, favoriteCounts);
-  }, [characters, favoriteCounts]);
+    return computeChatOpensRankingList(characters, chatCounts);
+  }, [characters, chatCounts]);
 
-  const totalFavoriteVotes = useMemo(() => {
-    return Object.values(favoriteCounts).reduce((sum, count) => sum + count, 0);
-  }, [favoriteCounts]);
+  const totalChatOpens = useMemo(() => {
+    return Object.values(chatCounts).reduce((sum, count) => sum + count, 0);
+  }, [chatCounts]);
 
   const filteredRankings = useMemo(() => {
     if (!searchQuery.trim()) return rankings;
@@ -72,20 +72,20 @@ export const CharacterReviewsAdmin: React.FC<CharacterReviewsAdminProps> = ({
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 pb-4 border-b border-[#F1D4DF]">
           <div>
             <div className="flex items-center gap-2">
-              <Heart className="w-5 h-5 text-rose-500 fill-rose-500" />
+              <Flame className="w-5 h-5 text-amber-500 fill-amber-400" />
               <h2 className="font-serif-title text-xl font-bold text-[#51434A]">
-                Quản lý & Thống kê Lượt Yêu Thích Nhân Vật
+                Quản lý & Thống kê Lượt Mở Chat (Chat Opens 🔥)
               </h2>
             </div>
             <p className="text-xs text-[#8E7A84] mt-1 font-light">
-              Theo dõi số lượt bình chọn tim ❤️ công khai từ cộng đồng người dùng và bảng xếp hạng yêu thích thực tế.
+              Theo dõi tổng số lượt mở cuộc trò chuyện (Chat Opens) thực tế của từng nhân vật từ phía người dùng.
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            <span className="text-xs font-bold text-[#865B9E] px-3.5 py-1.5 rounded-full bg-[#FAF0F5] border border-[#F1D4DF] flex items-center gap-1.5">
-              <BarChart2 className="w-4 h-4 text-rose-500" />
-              <span>Tổng: {totalFavoriteVotes} lượt tim ❤️</span>
+            <span className="text-xs font-bold text-amber-800 px-3.5 py-1.5 rounded-full bg-amber-50 border border-amber-200 flex items-center gap-1.5">
+              <BarChart2 className="w-4 h-4 text-amber-500" />
+              <span>Tổng: {totalChatOpens} lượt mở chat 🔥</span>
             </span>
           </div>
         </div>
@@ -107,18 +107,18 @@ export const CharacterReviewsAdmin: React.FC<CharacterReviewsAdminProps> = ({
       <div className="bg-white rounded-3xl border border-[#F1D4DF] shadow-xs overflow-hidden">
         <div className="px-6 py-4 border-b border-[#F1D4DF] flex items-center justify-between">
           <span className="text-xs font-semibold text-[#51434A]">
-            Bảng Xếp Hạng Yêu Thích ({filteredRankings.length} nhân vật)
+            Bảng Xếp Hạng Lượt Mở Chat ({filteredRankings.length} nhân vật)
           </span>
           <span className="text-xs text-[#8E7A84]">
-            Số liệu đồng bộ trực tiếp từ Supabase
+            Đồng bộ trực tiếp từ Supabase DDL
           </span>
         </div>
 
         {isLoading ? (
-          <div className="py-12 text-center text-xs text-[#8E7A84]">Đang tải dữ liệu yêu thích...</div>
+          <div className="py-12 text-center text-xs text-[#8E7A84]">Đang tải dữ liệu lượt mở chat...</div>
         ) : filteredRankings.length === 0 ? (
           <div className="py-12 text-center text-[#8E7A84] space-y-2">
-            <Heart className="w-8 h-8 text-rose-300 mx-auto opacity-60" />
+            <Flame className="w-8 h-8 text-amber-300 mx-auto opacity-60" />
             <p className="text-sm">Không tìm thấy nhân vật nào phù hợp.</p>
           </div>
         ) : (
@@ -129,7 +129,7 @@ export const CharacterReviewsAdmin: React.FC<CharacterReviewsAdminProps> = ({
                   <th className="px-5 py-3.5 text-center">Thứ hạng</th>
                   <th className="px-5 py-3.5">Nhân vật</th>
                   <th className="px-5 py-3.5">Danh mục / Thể loại</th>
-                  <th className="px-5 py-3.5 text-right">Lượt yêu thích ❤️</th>
+                  <th className="px-5 py-3.5 text-right">Tổng Lượt Mở Chat 🔥</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F1D4DF]/60">
@@ -176,11 +176,11 @@ export const CharacterReviewsAdmin: React.FC<CharacterReviewsAdminProps> = ({
                       {item.character.category || 'Persona Archive'}
                     </td>
 
-                    {/* Total Favorites */}
-                    <td className="px-5 py-3.5 text-right font-bold text-rose-600 text-sm">
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-50 border border-rose-200">
-                        <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500" />
-                        <span>{item.totalFavorites} lượt tim</span>
+                    {/* Total Chat Opens */}
+                    <td className="px-5 py-3.5 text-right font-bold text-amber-700 text-sm">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200">
+                        <Flame className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
+                        <span className="font-mono tabular-nums">{item.totalChats} lượt mở</span>
                       </span>
                     </td>
                   </tr>

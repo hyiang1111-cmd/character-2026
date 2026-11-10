@@ -38,13 +38,12 @@ import {
   CharacterTagRecord
 } from './services/characterRankingStorage';
 import {
-  getAllFavoriteCounts,
-  getUserFavorites,
-  toggleCharacterFavorite
-} from './services/characterFavoritesStorage';
+  getChatOpenCounts,
+  recordCharacterChatOpen
+} from './services/characterChatOpensStorage';
 import { setSharedSupabaseCredentials, getSupabaseClient } from './services/supabase';
 import { isValidHttpsUrl } from './services/promptGenerator';
-import { Sparkles, BookOpen, Layers, Search, X } from 'lucide-react';
+import { Sparkles, Layers, Search, X } from 'lucide-react';
 
 function AppContent() {
   const { isAdmin } = useAuth();
@@ -87,61 +86,35 @@ function AppContent() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Favorites state
-  const [favoriteCounts, setFavoriteCounts] = useState<Record<string, number>>({});
-  const [userFavList, setUserFavList] = useState<string[]>([]);
+  // Chat open counts state
+  const [chatOpenCounts, setChatOpenCounts] = useState<Record<string, number>>({});
   const { member } = useCommunity();
 
-  const loadFavorites = async () => {
+  const loadChatOpens = async () => {
     try {
-      const [counts, userFavs] = await Promise.all([
-        getAllFavoriteCounts(),
-        getUserFavorites(member?.id),
-      ]);
-      setFavoriteCounts(counts);
-      setUserFavList(userFavs);
+      const counts = await getChatOpenCounts();
+      setChatOpenCounts(counts);
     } catch (e) {
-      console.warn('Failed to load favorites in App:', e);
+      console.warn('Failed to load chat opens in App:', e);
     }
   };
 
   useEffect(() => {
-    loadFavorites();
+    loadChatOpens();
 
-    const handleFavoritesUpdated = () => {
-      loadFavorites();
+    const handleChatOpensUpdated = () => {
+      loadChatOpens();
     };
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('pca_favorites_updated', handleFavoritesUpdated);
+      window.addEventListener('pca_chat_opens_updated', handleChatOpensUpdated);
     }
     return () => {
       if (typeof window !== 'undefined') {
-        window.removeEventListener('pca_favorites_updated', handleFavoritesUpdated);
+        window.removeEventListener('pca_chat_opens_updated', handleChatOpensUpdated);
       }
     };
-  }, [member?.id]);
-
-  const handleToggleFavorite = async (character: Character) => {
-    if (!member) {
-      setAuthModalMode('login');
-      setIsAuthModalOpen(true);
-      return;
-    }
-    try {
-      const res = await toggleCharacterFavorite(character.id, member.id);
-      showToast(
-        'success',
-        res.isFavorited ? 'Đã yêu thích ❤️' : 'Bỏ yêu thích',
-        res.isFavorited
-          ? `Bạn đã thêm ${character.name} vào danh sách yêu thích!`
-          : `Đã bỏ yêu thích ${character.name}`
-      );
-      await loadFavorites();
-    } catch (err: any) {
-      showToast('error', 'Lỗi yêu thích', err?.message);
-    }
-  };
+  }, []);
 
   const navigateView = (view: AppView) => {
     setCurrentView(view);
@@ -267,17 +240,25 @@ function AppContent() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Open character modal & track character view for automated achievement badges & hot score
+  // Open character modal & track character view
   const handleOpenCharacterDetails = (char: Character) => {
     setSelectedCharacterModal(char);
     trackCharacterView(char.id);
     recordVerifiedCharacterView(char.id);
   };
 
-  // Direct Google AI Studio Chat action with hot score & server-side interaction tracking
-  const handleStartChat = (character: Character) => {
+  // Direct Google AI Studio Chat action with atomic deduplicated chat open counter
+  const handleStartChat = async (character: Character) => {
     recordChatClick(character.id);
     recordVerifiedCharacterChat(character.id);
+
+    // Atomically increment chat open counter with unique event token
+    try {
+      await recordCharacterChatOpen(character.id);
+    } catch (e) {
+      console.warn('Failed to record chat open event:', e);
+    }
+
     if (character.chatUrl && isValidHttpsUrl(character.chatUrl)) {
       window.open(character.chatUrl, '_blank', 'noopener,noreferrer');
       showToast(
@@ -315,8 +296,6 @@ function AppContent() {
   );
 
   // Aggregated dynamic character tags:
-  // MUST display ALL active tags from Admin Tag Management (even if count is 0),
-  // with exact names, custom colors, icons, and sort orders.
   const aggregatedTags: CharacterTagItem[] = useMemo(() => {
     const map = new Map<string, { label: string; count: number; color?: string; icon?: string; sortOrder?: number; isActive?: boolean }>();
 
@@ -363,7 +342,7 @@ function AppContent() {
       });
     });
 
-    // 3. Keep ALL tags where isActive is true (including count == 0 as explicitly requested)
+    // 3. Keep ALL tags where isActive is true
     return Array.from(map.entries())
       .filter(([_, data]) => data.isActive !== false)
       .map(([key, data]) => ({
@@ -404,10 +383,9 @@ function AppContent() {
     }
   };
 
-  // Filter characters using combined AND logic: Tag filter + Category filter + Search query
+  // Filter characters using combined AND logic
   const filteredCharacters = useMemo(() => {
     return publishedCharacters.filter((char) => {
-      // 1. Character Tag filter
       if (selectedTag) {
         const targetTag = selectedTag.toLowerCase().trim();
         const hasTag =
@@ -416,17 +394,13 @@ function AppContent() {
             const clean = String(t || '').trim().replace(/^#+/, '').toLowerCase();
             return clean === targetTag;
           });
-        if (!hasTag) {
-          return false;
-        }
+        if (!hasTag) return false;
       }
 
-      // 2. Category filter
       if (selectedCategory && selectedCategory !== 'All' && char.category !== selectedCategory) {
         return false;
       }
 
-      // 3. Search query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchName = (char.name || '').toLowerCase().includes(q);
@@ -481,6 +455,7 @@ function AppContent() {
             onViewChat={handleViewChat}
             onShowToast={showToast}
             onSelectTag={handleSelectTag}
+            totalChats={selectedCharacterModal ? (chatOpenCounts[selectedCharacterModal.id] || 0) : 0}
           />
           <ScenarioModal
             character={selectedScenarioModal}
@@ -510,7 +485,7 @@ function AppContent() {
         <div className="flex-1 flex items-center justify-center p-4">
           <AdminSetup
             onSuccess={() => {
-              showToast('success', 'Thiết lập Admin hoàn tất', 'Tài khoản Quản trị viên tối cao đã được khởi tạo và chức năng thiết lập được khóa vĩnh viễn.');
+              showToast('success', 'Thiết lập Admin hoàn tất', 'Tài khoản Quản trị viên tối cao đã được khởi tạo.');
               navigateView('admin');
             }}
             onGoToLogin={() => navigateView('admin-login')}
@@ -550,6 +525,7 @@ function AppContent() {
             onViewChat={handleViewChat}
             onShowToast={showToast}
             onSelectTag={handleSelectTag}
+            totalChats={selectedCharacterModal ? (chatOpenCounts[selectedCharacterModal.id] || 0) : 0}
           />
           <ScenarioModal
             character={selectedScenarioModal}
@@ -677,9 +653,7 @@ function AppContent() {
           onViewChat={handleViewChat}
           onShowToast={showToast}
           onSelectTag={handleSelectTag}
-          isFavorited={selectedCharacterModal ? userFavList.includes(selectedCharacterModal.id) : false}
-          totalFavorites={selectedCharacterModal ? (favoriteCounts[selectedCharacterModal.id] || 0) : 0}
-          onToggleFavorite={handleToggleFavorite}
+          totalChats={selectedCharacterModal ? (chatOpenCounts[selectedCharacterModal.id] || 0) : 0}
         />
         <ScenarioModal
           character={selectedScenarioModal}
@@ -737,10 +711,7 @@ function AppContent() {
               <CharacterHotRanking
                 characters={publishedCharacters}
                 onOpenDetails={handleOpenCharacterDetails}
-                onOpenAuth={(mode) => {
-                  setAuthModalMode(mode || 'login');
-                  setIsAuthModalOpen(true);
-                }}
+                onStartChat={handleStartChat}
               />
             </div>
 
@@ -783,9 +754,7 @@ function AppContent() {
                         onStartChat={handleStartChat}
                         onViewChat={handleViewChat}
                         onSelectTag={handleSelectTag}
-                        isFavorited={userFavList.includes(char.id)}
-                        totalFavorites={favoriteCounts[char.id] || 0}
-                        onToggleFavorite={handleToggleFavorite}
+                        totalChats={chatOpenCounts[char.id] || 0}
                       />
                     ))}
                   </div>
@@ -890,9 +859,7 @@ function AppContent() {
                       onStartChat={handleStartChat}
                       onViewChat={handleViewChat}
                       onSelectTag={handleSelectTag}
-                      isFavorited={userFavList.includes(char.id)}
-                      totalFavorites={favoriteCounts[char.id] || 0}
-                      onToggleFavorite={handleToggleFavorite}
+                      totalChats={chatOpenCounts[char.id] || 0}
                     />
                   ))}
                 </div>
@@ -929,6 +896,7 @@ function AppContent() {
               setIsAuthModalOpen(true);
             }}
             onOpenCharacterDetails={handleOpenCharacterDetails}
+            onStartChat={handleStartChat}
           />
         )}
 
@@ -960,9 +928,7 @@ function AppContent() {
         onViewChat={handleViewChat}
         onShowToast={showToast}
         onSelectTag={handleSelectTag}
-        isFavorited={selectedCharacterModal ? userFavList.includes(selectedCharacterModal.id) : false}
-        totalFavorites={selectedCharacterModal ? (favoriteCounts[selectedCharacterModal.id] || 0) : 0}
-        onToggleFavorite={handleToggleFavorite}
+        totalChats={selectedCharacterModal ? (chatOpenCounts[selectedCharacterModal.id] || 0) : 0}
       />
 
       <ScenarioModal

@@ -12,8 +12,7 @@ import {
   Info,
   BookOpen,
   ScrollText,
-  Share2,
-  Heart
+  Flame
 } from 'lucide-react';
 import { Character } from '../../types/character';
 import { generateCharacterPrompt, isValidHttpsUrl } from '../../services/promptGenerator';
@@ -26,9 +25,7 @@ interface CharacterModalProps {
   onViewChat: (character: Character) => void;
   onShowToast: (type: 'success' | 'error' | 'info', title: string, message?: string) => void;
   onSelectTag?: (tag: string) => void;
-  isFavorited?: boolean;
-  totalFavorites?: number;
-  onToggleFavorite?: (character: Character) => void;
+  totalChats?: number;
 }
 
 export const CharacterModal: React.FC<CharacterModalProps> = ({
@@ -39,9 +36,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
   onViewChat,
   onShowToast,
   onSelectTag,
-  isFavorited = false,
-  totalFavorites = 0,
-  onToggleFavorite,
+  totalChats = 0,
 }) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'roleplay' | 'prompt'>('profile');
   const [copied, setCopied] = useState(false);
@@ -80,7 +75,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
       <div className="relative w-full max-w-3xl bg-[#FFF5F7] rounded-3xl border border-[#F1D4DF] shadow-2xl overflow-hidden z-10 flex flex-col max-h-[90vh]">
         {/* Top Header Bar */}
         <div className="px-6 py-4 bg-white/90 border-b border-[#F1D4DF] flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-serif-title font-semibold text-xl text-[#51434A]">
               {character.name}
             </span>
@@ -89,6 +84,13 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
                 {character.category}
               </span>
             )}
+            <div
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-amber-700 text-xs font-semibold"
+              title={`Tổng lượt mở cuộc trò chuyện: ${totalChats}`}
+            >
+              <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+              <span className="font-mono tabular-nums">{totalChats} lượt mở chat</span>
+            </div>
             {hasValidViewerLink && (
               <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full bg-[#E9A9BB] text-white text-[10px] font-bold">
                 VIEWER ACCESS ENABLED
@@ -210,7 +212,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
             {hasValidChatUrl ? (
               <button
                 onClick={() => onStartChat(character)}
-                className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white text-sm font-bold tracking-wide hover:brightness-105 active:scale-98 transition-all shadow-sm"
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white text-sm font-bold tracking-wide hover:brightness-105 active:scale-98 transition-all shadow-sm cursor-pointer"
               >
                 <MessageSquare className="w-4 h-4" />
                 <span>START CHAT (GOOGLE AI STUDIO)</span>
@@ -230,7 +232,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
             {hasValidViewerLink ? (
               <button
                 onClick={() => onViewChat(character)}
-                className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-white border border-[#E9A9BB] text-[#51434A] text-sm font-bold hover:bg-[#FBE6ED] active:scale-98 transition-all shadow-xs"
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-white border border-[#E9A9BB] text-[#51434A] text-sm font-bold hover:bg-[#FBE6ED] active:scale-98 transition-all shadow-xs cursor-pointer"
               >
                 <Eye className="w-4 h-4 text-[#D88CA3]" />
                 <span>VIEW CHAT (PUBLIC ACCESS)</span>
@@ -239,7 +241,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
             ) : (
               <button
                 onClick={handleCopyPromptAndNotify}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white border border-[#F1D4DF] text-[#6E5C65] text-xs font-semibold hover:border-[#E9A9BB] hover:text-[#51434A] transition-all"
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white border border-[#F1D4DF] text-[#6E5C65] text-xs font-semibold hover:border-[#E9A9BB] hover:text-[#51434A] transition-all cursor-pointer"
               >
                 <Copy className="w-4 h-4 text-[#D88CA3]" />
                 <span>Copy Character Prompt</span>
@@ -251,7 +253,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
           <div className="flex border-b border-[#F1D4DF] gap-4 text-xs font-semibold">
             <button
               onClick={() => setActiveTab('profile')}
-              className={`pb-3 px-1 border-b-2 transition-all flex items-center gap-1.5 ${
+              className={`pb-3 px-1 border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'profile'
                   ? 'border-[#E9A9BB] text-[#51434A]'
                   : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
@@ -262,7 +264,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('roleplay')}
-              className={`pb-3 px-1 border-b-2 transition-all flex items-center gap-1.5 ${
+              className={`pb-3 px-1 border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'roleplay'
                   ? 'border-[#E9A9BB] text-[#51434A]'
                   : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
@@ -273,7 +275,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('prompt')}
-              className={`pb-3 px-1 border-b-2 transition-all flex items-center gap-1.5 ${
+              className={`pb-3 px-1 border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'prompt'
                   ? 'border-[#E9A9BB] text-[#51434A]'
                   : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
@@ -434,7 +436,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
                   </div>
                   <button
                     onClick={handleCopyPrompt}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FFF5F7] border border-[#E9A9BB] text-xs font-medium text-[#51434A] hover:bg-[#FBE6ED] transition-all"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FFF5F7] border border-[#E9A9BB] text-xs font-medium text-[#51434A] hover:bg-[#FBE6ED] transition-all cursor-pointer"
                   >
                     {copied ? (
                       <>
@@ -476,33 +478,15 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
         <div className="px-6 py-4 bg-white/95 border-t border-[#F1D4DF] flex flex-wrap items-center justify-between gap-3 sticky bottom-0 z-20">
           <button
             onClick={onClose}
-            className="px-5 py-2 rounded-full bg-white border border-[#F1D4DF] text-[#6E5C65] hover:text-[#51434A] text-xs font-medium hover:bg-[#FFF5F7] transition-all"
+            className="px-5 py-2 rounded-full bg-white border border-[#F1D4DF] text-[#6E5C65] hover:text-[#51434A] text-xs font-medium hover:bg-[#FFF5F7] transition-all cursor-pointer"
           >
             Close
           </button>
 
           <div className="flex items-center gap-2">
-            {onToggleFavorite && (
-              <button
-                onClick={() => onToggleFavorite(character)}
-                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full border text-xs font-bold transition-all cursor-pointer shadow-2xs ${
-                  isFavorited
-                    ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100'
-                    : 'bg-[#FFF5F7] border-[#E9A9BB] text-[#774D8E] hover:bg-[#FBE6ED]'
-                }`}
-                title={isFavorited ? 'Bỏ yêu thích nhân vật này' : 'Thêm vào danh sách yêu thích'}
-              >
-                <Heart
-                  className={`w-3.5 h-3.5 transition-transform ${
-                    isFavorited ? 'fill-rose-500 text-rose-500 scale-110' : 'text-[#D88CA3]'
-                  }`}
-                />
-                <span>{isFavorited ? 'Đã yêu thích' : 'Yêu thích'} ({totalFavorites})</span>
-              </button>
-            )}
             <button
               onClick={handleCopyPrompt}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#FFF5F7] border border-[#E9A9BB] text-xs font-medium text-[#51434A] hover:bg-[#FBE6ED] transition-all"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#FFF5F7] border border-[#E9A9BB] text-xs font-medium text-[#51434A] hover:bg-[#FBE6ED] transition-all cursor-pointer"
             >
               <Copy className="w-3.5 h-3.5 text-[#D88CA3]" />
               <span>Copy Prompt</span>
@@ -510,7 +494,7 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
             {hasValidChatUrl && (
               <button
                 onClick={() => onStartChat(character)}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white text-xs font-bold hover:brightness-105 active:scale-95 transition-all shadow-xs"
+                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-full bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white text-xs font-bold hover:brightness-105 active:scale-95 transition-all shadow-xs cursor-pointer"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
                 <span>START CHAT</span>

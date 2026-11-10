@@ -1,31 +1,28 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Heart,
+  Flame,
   Search,
-  Sparkles,
   User,
-  ChevronRight,
   ExternalLink,
   Award,
   Crown,
   Trophy,
-  CheckCircle2
+  MessageSquare,
+  Sparkles
 } from 'lucide-react';
 import { Character } from '../../types/character';
-import { useCommunity } from '../../context/CommunityContext';
 import {
-  getAllFavoriteCounts,
-  getUserFavorites,
-  toggleCharacterFavorite,
-  computeFavoriteRankingList,
-  FavoriteRankedCharacter,
-} from '../../services/characterFavoritesStorage';
+  getChatOpenCounts,
+  computeChatOpensRankingList,
+  ChatOpensRankedCharacter,
+} from '../../services/characterChatOpensStorage';
 
 interface CharacterReviewsPageProps {
   characters: Character[];
   initialCharacterId?: string;
   onOpenAuth: (mode?: 'login' | 'register') => void;
   onOpenCharacterDetails?: (character: Character) => void;
+  onStartChat?: (character: Character) => void;
 }
 
 export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
@@ -33,9 +30,8 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
   initialCharacterId,
   onOpenAuth,
   onOpenCharacterDetails,
+  onStartChat,
 }) => {
-  const { member } = useCommunity();
-
   // Published characters only
   const publishedChars = useMemo(() => characters.filter((c) => c.status === 'published'), [characters]);
 
@@ -45,11 +41,9 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
   );
   const [charSearchQuery, setCharSearchQuery] = useState('');
 
-  // Favorites state
-  const [favoriteCounts, setFavoriteCounts] = useState<Record<string, number>>({});
-  const [userFavList, setUserFavList] = useState<string[]>([]);
+  // Chat open counts state
+  const [chatCounts, setChatCounts] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Selected character object
   const selectedChar = useMemo(
@@ -72,21 +66,17 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
   }, [publishedChars, charSearchQuery]);
 
   // Compute leaderboard
-  const favoriteRankings = useMemo(() => {
-    return computeFavoriteRankingList(publishedChars, favoriteCounts);
-  }, [publishedChars, favoriteCounts]);
+  const chatRankings = useMemo(() => {
+    return computeChatOpensRankingList(publishedChars, chatCounts);
+  }, [publishedChars, chatCounts]);
 
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [counts, userFavs] = await Promise.all([
-        getAllFavoriteCounts(),
-        getUserFavorites(member?.id),
-      ]);
-      setFavoriteCounts(counts);
-      setUserFavList(userFavs);
+      const counts = await getChatOpenCounts();
+      setChatCounts(counts);
     } catch (e) {
-      console.error('Failed to load favorites data:', e);
+      console.error('Failed to load chat open counts data:', e);
     } finally {
       setIsLoading(false);
     }
@@ -95,74 +85,46 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
   useEffect(() => {
     loadData();
 
-    const handleFavoritesUpdated = () => {
+    const handleChatOpensUpdated = () => {
       loadData();
     };
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('pca_favorites_updated', handleFavoritesUpdated);
+      window.addEventListener('pca_chat_opens_updated', handleChatOpensUpdated);
     }
     return () => {
       if (typeof window !== 'undefined') {
-        window.removeEventListener('pca_favorites_updated', handleFavoritesUpdated);
+        window.removeEventListener('pca_chat_opens_updated', handleChatOpensUpdated);
       }
     };
-  }, [member?.id]);
+  }, [characters]);
 
-  const handleToggleFavorite = async (char: Character) => {
-    if (!member) {
-      onOpenAuth('login');
-      return;
-    }
-
-    try {
-      const res = await toggleCharacterFavorite(char.id, member.id);
-      setToastMessage(
-        res.isFavorited
-          ? `Đã thêm ${char.name} vào danh sách yêu thích ❤️`
-          : `Đã bỏ yêu thích ${char.name}`
-      );
-      setTimeout(() => setToastMessage(null), 3000);
-      await loadData();
-    } catch (err: any) {
-      alert(err?.message || 'Có lỗi xảy ra khi thực hiện yêu thích.');
-    }
-  };
-
-  const isSelectedCharFavorited = selectedChar ? userFavList.includes(selectedChar.id) : false;
-  const selectedCharTotalFavs = selectedChar ? (favoriteCounts[selectedChar.id] || 0) : 0;
+  const selectedCharTotalChats = selectedChar ? (chatCounts[selectedChar.id] || 0) : 0;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16">
       {/* Header Banner */}
       <div className="text-center max-w-2xl mx-auto mb-10">
-        <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white border border-[#F1D4DF] shadow-xs text-xs font-semibold text-[#865B9E] mb-3">
-          <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500 animate-pulse" />
-          <span>Character Favorites Hub</span>
+        <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white border border-amber-200 shadow-xs text-xs font-semibold text-amber-800 mb-3">
+          <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400 animate-pulse" />
+          <span>Hot Chat Opens Hub 🔥</span>
         </div>
         <h1 className="font-serif-title text-4xl sm:text-5xl font-medium text-[#51434A] mb-3">
-          Yêu Thích & Bình Chọn Nhân Vật
+          Bảng Xếp Hạng Lượt Mở Chat
         </h1>
         <p className="text-sm text-[#6E5C65] font-light">
-          Thả tim ❤️ cho những persona bạn yêu thích nhất, theo dõi tổng lượt bình chọn và khám phá thứ hạng các nhân vật nổi bật trong cộng đồng.
+          Theo dõi số lượt người dùng thực sự mở cuộc trò chuyện (Chat Opens) với các persona trong hệ thống Character Archive.
         </p>
       </div>
-
-      {toastMessage && (
-        <div className="max-w-md mx-auto mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2 shadow-sm animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-rose-600 shrink-0" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* LEFT COLUMN: CHARACTER PICKER & LIST (4 cols) */}
         <div className="lg:col-span-4 bg-white rounded-3xl border border-[#F1D4DF] shadow-xs p-5 space-y-4">
           <div className="flex items-center justify-between pb-3 border-b border-[#F1D4DF]/70">
             <span className="font-serif-title font-semibold text-sm text-[#51434A]">
-              Chọn nhân vật ({filteredChars.length})
+              Danh sách nhân vật ({filteredChars.length})
             </span>
-            <span className="text-[11px] text-[#8E7A84]">Tìm kiếm nhanh</span>
+            <span className="text-[11px] text-[#8E7A84]">Tìm kiếm</span>
           </div>
 
           {/* Search Character Input */}
@@ -181,8 +143,7 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
           <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
             {filteredChars.map((char) => {
               const isSelected = selectedChar?.id === char.id;
-              const isFav = userFavList.includes(char.id);
-              const favCount = favoriteCounts[char.id] || 0;
+              const count = chatCounts[char.id] || 0;
 
               return (
                 <div
@@ -190,7 +151,7 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
                   onClick={() => setSelectedCharId(char.id)}
                   className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-gradient-to-r from-[#FAF0F5] to-[#F5EAF7] border-2 border-[#D88CA3] shadow-xs'
+                      ? 'bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 shadow-xs'
                       : 'bg-white hover:bg-[#FFF5F7] border border-[#F1D4DF]/60'
                   }`}
                 >
@@ -201,7 +162,7 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
                       className="w-11 h-11 rounded-full object-cover border-2 border-white shadow-2xs shrink-0"
                     />
                     <div className="min-w-0">
-                      <p className={`font-serif-title font-bold text-xs truncate ${isSelected ? 'text-[#865B9E]' : 'text-[#51434A]'}`}>
+                      <p className={`font-serif-title font-bold text-xs truncate ${isSelected ? 'text-amber-800' : 'text-[#51434A]'}`}>
                         {char.name}
                       </p>
                       <p className="text-[10px] text-[#8E7A84] truncate">
@@ -210,48 +171,32 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
                     </div>
                   </div>
 
-                  {/* Heart Favorite Button & Badge */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleFavorite(char);
-                    }}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-bold transition-all shrink-0 ${
-                      isFav
-                        ? 'bg-rose-50 border-rose-200 text-rose-600'
-                        : 'bg-white border-[#F1D4DF] text-[#51434A] hover:text-rose-500'
-                    }`}
-                    title={isFav ? 'Bỏ yêu thích' : 'Yêu thích nhân vật này'}
-                  >
-                    <Heart
-                      className={`w-3.5 h-3.5 ${
-                        isFav ? 'fill-rose-500 text-rose-500' : 'text-[#865B9E]'
-                      }`}
-                    />
-                    <span>{favCount}</span>
-                  </button>
+                  {/* Flame Chat Opens Badge */}
+                  <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold shrink-0">
+                    <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+                    <span className="font-mono tabular-nums">{count}</span>
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* RIGHT COLUMN: SELECTED CHARACTER & FAVORITES LEADERBOARD (8 cols) */}
+        {/* RIGHT COLUMN: SELECTED CHARACTER & CHAT OPENS LEADERBOARD (8 cols) */}
         <div className="lg:col-span-8 space-y-6">
           {/* Selected Character Hero Banner */}
           {selectedChar && (
-            <div className="bg-gradient-to-br from-white via-[#FAF5FB] to-[#FFF5F7] rounded-3xl border border-[#F1D4DF] p-6 shadow-xs">
+            <div className="bg-gradient-to-br from-white via-amber-50/20 to-[#FFF5F7] rounded-3xl border border-[#F1D4DF] p-6 shadow-xs">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 pb-5 border-b border-[#F1D4DF]">
                 <div className="flex items-center gap-4">
                   <img
                     src={selectedChar.avatarUrl || selectedChar.portraitUrl || 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=150'}
                     alt={selectedChar.name}
-                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-4 border-white shadow-md ring-2 ring-[#E9A9BB]/40 shrink-0"
+                    className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-4 border-white shadow-md ring-2 ring-amber-300 shrink-0"
                   />
                   <div>
-                    <span className="text-[11px] font-semibold uppercase tracking-wider text-[#D88CA3] block">
-                      Chi tiết & Bình chọn
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 block">
+                      Thông kê cuộc trò chuyện
                     </span>
                     <h2 className="font-serif-title text-2xl font-bold text-[#51434A]">
                       {selectedChar.fullName || selectedChar.name}
@@ -262,7 +207,7 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   {onOpenCharacterDetails && (
                     <button
                       onClick={() => onOpenCharacterDetails(selectedChar)}
@@ -273,24 +218,20 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
                     </button>
                   )}
 
-                  {/* Big Favorite Heart Button */}
-                  <button
-                    onClick={() => handleToggleFavorite(selectedChar)}
-                    className={`inline-flex items-center gap-2 px-5 py-2 rounded-full border text-xs font-bold transition-all shadow-sm cursor-pointer ${
-                      isSelectedCharFavorited
-                        ? 'bg-rose-50 border-rose-300 text-rose-600 hover:bg-rose-100'
-                        : 'bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white hover:brightness-105 border-transparent'
-                    }`}
-                  >
-                    <Heart
-                      className={`w-4 h-4 ${
-                        isSelectedCharFavorited ? 'fill-rose-500 text-rose-500 scale-110' : 'fill-white text-white'
-                      }`}
-                    />
-                    <span>
-                      {isSelectedCharFavorited ? 'Đã yêu thích ❤️' : 'Yêu thích ngay'} ({selectedCharTotalFavs})
-                    </span>
-                  </button>
+                  {onStartChat && (
+                    <button
+                      onClick={() => onStartChat(selectedChar)}
+                      className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold hover:brightness-105 transition-all shadow-xs cursor-pointer"
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                      <span>Chat ngay</span>
+                    </button>
+                  )}
+
+                  <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white border border-amber-200 text-amber-800 text-xs font-bold shadow-2xs">
+                    <Flame className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" />
+                    <span>{selectedCharTotalChats} lượt mở chat</span>
+                  </div>
                 </div>
               </div>
 
@@ -303,23 +244,21 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
             </div>
           )}
 
-          {/* COMMUNITY FAVORITES LEADERBOARD */}
+          {/* COMMUNITY CHAT OPENS LEADERBOARD */}
           <div className="bg-white rounded-3xl border border-[#F1D4DF] p-6 shadow-xs space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#F1D4DF]">
               <h3 className="font-serif-title font-bold text-base text-[#51434A] flex items-center gap-2">
                 <Trophy className="w-4 h-4 text-amber-500" />
-                <span>Bảng Xếp Hạng Yêu Thích Cộng Đồng</span>
+                <span>Bảng Xếp Hạng Hot Chat (🔥)</span>
               </h3>
-              <span className="text-xs text-[#8E7A84]">Xếp theo tổng lượt thả tim ❤️</span>
+              <span className="text-xs text-[#8E7A84]">Xếp theo tổng số lượt mở chat</span>
             </div>
 
-            {favoriteRankings.length === 0 ? (
-              <div className="py-8 text-center text-xs text-[#8E7A84]">Chưa có dữ liệu xếp hạng.</div>
+            {chatRankings.length === 0 ? (
+              <div className="py-8 text-center text-xs text-[#8E7A84]">Chưa có dữ liệu lượt mở chat.</div>
             ) : (
               <div className="space-y-3">
-                {favoriteRankings.slice(0, 10).map((item) => {
-                  const isFav = userFavList.includes(item.character.id);
-
+                {chatRankings.slice(0, 10).map((item) => {
                   return (
                     <div
                       key={item.character.id}
@@ -366,26 +305,11 @@ export const CharacterReviewsPage: React.FC<CharacterReviewsPageProps> = ({
                         </div>
                       </div>
 
-                      {/* Heart Toggle Button */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleFavorite(item.character);
-                        }}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-2xs shrink-0 ${
-                          isFav
-                            ? 'bg-rose-50 border-rose-200 text-rose-600'
-                            : 'bg-white border-[#F1D4DF] text-[#51434A] hover:text-rose-500'
-                        }`}
-                      >
-                        <Heart
-                          className={`w-3.5 h-3.5 ${
-                            isFav ? 'fill-rose-500 text-rose-500' : 'text-[#865B9E]'
-                          }`}
-                        />
-                        <span>{item.totalFavorites} lượt</span>
-                      </button>
+                      {/* Chat Opens Count Badge */}
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold shadow-2xs shrink-0">
+                        <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+                        <span className="font-mono tabular-nums">{item.totalChats} lượt mở</span>
+                      </div>
                     </div>
                   );
                 })}

@@ -26,7 +26,7 @@ import { CharacterReviewsAdmin } from './CharacterReviewsAdmin';
 import { CharacterHotRankingAdmin } from './CharacterHotRankingAdmin';
 import { useAuth } from '../../context/AuthContext';
 import { saveCharacter, deleteCharacter, duplicateCharacter } from '../../services/storage';
-import { Music, Crown, Tag, Star, Flame, Heart } from 'lucide-react';
+import { Music, Crown, Tag, Flame } from 'lucide-react';
 
 interface AdminDashboardProps {
   characters: Character[];
@@ -155,7 +155,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="flex items-center gap-3">
             <button
               onClick={onReturnToSite}
-              className="p-2 rounded-xl bg-[#FFF5F7] hover:bg-[#FBE6ED] text-[#51434A] transition-colors"
+              className="p-2 rounded-xl bg-[#FFF5F7] hover:bg-[#FBE6ED] text-[#51434A] transition-colors cursor-pointer"
               title="Return to Public Archive"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -188,7 +188,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {!isCreatingNew && (
               <button
                 onClick={handleStartCreate}
-                className="inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-full bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white text-xs sm:text-sm font-bold hover:brightness-105 active:scale-95 transition-all shadow-sm ring-2 ring-[#E9A9BB]/30"
+                className="inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-full bg-gradient-to-r from-[#E9A9BB] to-[#D88CA3] text-white text-xs sm:text-sm font-bold hover:brightness-105 active:scale-95 transition-all shadow-sm ring-2 ring-[#E9A9BB]/30 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>ADD NEW CHARACTER</span>
@@ -197,7 +197,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <button
               onClick={logout}
-              className="p-2 rounded-xl bg-[#FFF5F7] hover:bg-red-50 hover:text-red-600 text-[#8E7A84] border border-[#F1D4DF] transition-colors"
+              className="p-2 rounded-xl bg-[#FFF5F7] hover:bg-red-50 hover:text-red-600 text-[#8E7A84] border border-[#F1D4DF] transition-colors cursor-pointer"
               title="Sign Out of Admin"
             >
               <LogOut className="w-4 h-4" />
@@ -210,7 +210,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center gap-6 text-xs font-semibold overflow-x-auto border-t border-[#F1D4DF]/60">
             <button
               onClick={() => setActiveTab('characters')}
-              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'characters'
                   ? 'border-[#E9A9BB] text-[#51434A]'
                   : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
@@ -240,8 +240,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
               }`}
             >
-              <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
-              <span>Quản lý Yêu thích ❤️</span>
+              <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+              <span>Thống kê Chat Opens 🔥</span>
             </button>
 
             <button
@@ -258,7 +258,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <button
               onClick={() => setActiveTab('community')}
-              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'community'
                   ? 'border-[#E9A9BB] text-[#51434A]'
                   : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
@@ -270,7 +270,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <button
               onClick={() => setActiveTab('content')}
-              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'content'
                   ? 'border-[#E9A9BB] text-[#51434A]'
                   : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
@@ -282,7 +282,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <button
               onClick={() => setActiveTab('music')}
-              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'music'
                   ? 'border-[#E9A9BB] text-[#51434A]'
                   : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
@@ -294,7 +294,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             <button
               onClick={() => setActiveTab('firebase')}
-              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
                 activeTab === 'firebase'
                   ? 'border-[#E9A9BB] text-[#51434A]'
                   : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
@@ -461,13 +461,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="flex items-center justify-center gap-3">
               <button
                 onClick={() => setCharacterToDelete(null)}
-                className="px-4 py-2 rounded-xl bg-white border border-[#F1D4DF] text-xs font-semibold text-[#6E5C65] hover:bg-[#FFF5F7]"
+                className="px-4 py-2 rounded-xl bg-white border border-[#F1D4DF] text-xs font-semibold text-[#6E5C65] hover:bg-[#FFF5F7] cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmDeleteCharacter}
-                className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-xs"
+                className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
                 Yes, Delete Record
               </button>

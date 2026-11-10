@@ -9,7 +9,7 @@ import {
   Lock,
   MessageSquare,
   Crown,
-  Heart,
+  Flame,
   User,
   LogOut,
   Trophy,
@@ -53,7 +53,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Logo */}
         <button
           onClick={() => handleNavClick('home')}
-          className="flex items-center gap-2.5 group text-left transition-transform active:scale-98"
+          className="flex items-center gap-2.5 group text-left transition-transform active:scale-98 cursor-pointer"
         >
           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#E9A9BB] to-[#F6DCE5] flex items-center justify-center shadow-xs group-hover:rotate-12 transition-transform duration-300">
             <Sparkles className="w-4 h-4 text-white" />
@@ -100,8 +100,8 @@ export const Header: React.FC<HeaderProps> = ({
                 : 'text-[#6E5C65] hover:text-[#51434A] hover:bg-[#FFF5F7]'
             }`}
           >
-            <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
-            <span>Yêu thích</span>
+            <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+            <span>Hot Chat 🔥</span>
           </button>
 
           <button
@@ -279,8 +279,8 @@ export const Header: React.FC<HeaderProps> = ({
               currentView === 'reviews' ? 'bg-[#FBE6ED] text-[#51434A] font-semibold' : 'text-[#6E5C65]'
             }`}
           >
-            <span>Nhân vật Yêu thích</span>
-            <Heart className="w-4 h-4 text-rose-500 fill-rose-500" />
+            <span>Nhân vật Hot Chat 🔥</span>
+            <Flame className="w-4 h-4 text-amber-500 fill-amber-400" />
           </button>
 
           <button

@@ -1,5 +1,5 @@
 import React from 'react';
-import { ExternalLink, MessageSquare, User, BookOpen, Heart } from 'lucide-react';
+import { ExternalLink, MessageSquare, User, BookOpen, Flame } from 'lucide-react';
 import { Character } from '../../types/character';
 import { isValidHttpsUrl } from '../../services/promptGenerator';
 
@@ -10,9 +10,7 @@ interface CharacterCardProps {
   onStartChat: (character: Character) => void;
   onViewChat?: (character: Character) => void;
   onSelectTag?: (tag: string) => void;
-  isFavorited?: boolean;
-  totalFavorites?: number;
-  onToggleFavorite?: (character: Character) => void;
+  totalChats?: number;
 }
 
 export const CharacterCard: React.FC<CharacterCardProps> = ({
@@ -21,9 +19,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
   onOpenScenario,
   onStartChat,
   onSelectTag,
-  isFavorited = false,
-  totalFavorites = 0,
-  onToggleFavorite,
+  totalChats = 0,
 }) => {
   const avatar = character.avatarUrl || character.portraitUrl;
   const hasValidChatUrl = Boolean(character.chatUrl && isValidHttpsUrl(character.chatUrl));
@@ -77,10 +73,10 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
             </div>
           </div>
 
-          {/* Content on Right: 1. Name & Favorite Heart, 2. Nickname, 3. Tags */}
+          {/* Content on Right: 1. Name & Chat Opens Badge, 2. Nickname, 3. Tags */}
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-1.5">
-              {/* 1. Tên nhân vật: nổi bật nhất, font chữ dễ đọc */}
+              {/* 1. Tên nhân vật */}
               <h3
                 onClick={() => onOpenDetails(character)}
                 className="font-serif-title text-lg sm:text-xl font-bold text-[#493B55] hover:text-[#774D8E] transition-colors cursor-pointer truncate leading-tight flex-1"
@@ -89,27 +85,14 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
                 {character.name}
               </h3>
 
-              {/* Heart ❤️ Favorite Badge Button */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleFavorite?.(character);
-                }}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all cursor-pointer shadow-2xs shrink-0 ${
-                  isFavorited
-                    ? 'bg-rose-50 border-rose-200 text-rose-600 font-bold hover:bg-rose-100'
-                    : 'bg-white/90 border-white text-[#493B55] hover:bg-[#FFF0F5] hover:text-rose-500'
-                }`}
-                title={isFavorited ? 'Bỏ yêu thích nhân vật này' : 'Yêu thích nhân vật này'}
+              {/* Flame 🔥 Chat Opens Count Badge */}
+              <div
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 text-amber-700 shadow-2xs shrink-0"
+                title={`Tổng lượt mở cuộc trò chuyện: ${totalChats}`}
               >
-                <Heart
-                  className={`w-3.5 h-3.5 transition-transform ${
-                    isFavorited ? 'fill-rose-500 text-rose-500 scale-110' : 'text-[#865B9E]'
-                  }`}
-                />
-                <span className="text-xs font-bold">{totalFavorites}</span>
-              </button>
+                <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+                <span className="text-xs font-bold font-mono tabular-nums">{totalChats}</span>
+              </div>
             </div>
 
             {/* 2. Nickname: hiển thị dưới tên nhân vật */}
@@ -163,7 +146,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
         </div>
       </div>
 
-      {/* 4. 3 Nút chức năng ở mỗi thẻ */}
+      {/* 5. 3 Nút chức năng ở mỗi thẻ */}
       <div className="mt-4 pt-3 border-t border-white/70 flex flex-col gap-2">
         {/* Nút 1: Chat với nhân vật */}
         <button

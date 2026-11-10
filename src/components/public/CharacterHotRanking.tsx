@@ -2,38 +2,31 @@ import React, { useState, useEffect } from 'react';
 import {
   Flame,
   Crown,
-  Heart,
-  MessageSquare,
   Sparkles,
-  Trophy,
   Award,
-  TrendingUp
+  TrendingUp,
+  MessageSquare
 } from 'lucide-react';
 import { Character } from '../../types/character';
 import {
-  getAllFavoriteCounts,
-  getUserFavorites,
-  toggleCharacterFavorite,
-  computeFavoriteRankingList,
-  FavoriteRankedCharacter,
-} from '../../services/characterFavoritesStorage';
-import { useCommunity } from '../../context/CommunityContext';
+  getChatOpenCounts,
+  computeChatOpensRankingList,
+  ChatOpensRankedCharacter,
+} from '../../services/characterChatOpensStorage';
 
 interface CharacterHotRankingProps {
   characters: Character[];
   onOpenDetails: (character: Character) => void;
-  onOpenAuth?: (mode?: 'login' | 'register') => void;
+  onStartChat?: (character: Character) => void;
 }
 
 export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
   characters,
   onOpenDetails,
-  onOpenAuth,
+  onStartChat,
 }) => {
-  const { member } = useCommunity();
-  const [rankedList, setRankedList] = useState<FavoriteRankedCharacter[]>([]);
-  const [favoriteCounts, setFavoriteCounts] = useState<Record<string, number>>({});
-  const [userFavList, setUserFavList] = useState<string[]>([]);
+  const [rankedList, setRankedList] = useState<ChatOpensRankedCharacter[]>([]);
+  const [chatCounts, setChatCounts] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
 
   // Published characters only
@@ -42,17 +35,13 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [counts, userFavs] = await Promise.all([
-        getAllFavoriteCounts(),
-        getUserFavorites(member?.id),
-      ]);
-      setFavoriteCounts(counts);
-      setUserFavList(userFavs);
+      const counts = await getChatOpenCounts();
+      setChatCounts(counts);
 
-      const topList = computeFavoriteRankingList(publishedChars, counts);
+      const topList = computeChatOpensRankingList(publishedChars, counts);
       setRankedList(topList);
     } catch (e) {
-      console.error('Failed to load favorite ranking:', e);
+      console.error('Failed to load chat opens ranking:', e);
     } finally {
       setIsLoading(false);
     }
@@ -61,32 +50,19 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
   useEffect(() => {
     loadData();
 
-    const handleFavoritesUpdated = () => {
+    const handleChatOpensUpdated = () => {
       loadData();
     };
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('pca_favorites_updated', handleFavoritesUpdated);
+      window.addEventListener('pca_chat_opens_updated', handleChatOpensUpdated);
     }
     return () => {
       if (typeof window !== 'undefined') {
-        window.removeEventListener('pca_favorites_updated', handleFavoritesUpdated);
+        window.removeEventListener('pca_chat_opens_updated', handleChatOpensUpdated);
       }
     };
-  }, [characters, member?.id]);
-
-  const handleToggleFav = async (char: Character, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!member) {
-      onOpenAuth?.('login');
-      return;
-    }
-    try {
-      await toggleCharacterFavorite(char.id, member.id);
-    } catch (err: any) {
-      alert(err?.message || 'Không thể cập nhật yêu thích.');
-    }
-  };
+  }, [characters]);
 
   if (publishedChars.length === 0 || rankedList.length === 0) {
     return null;
@@ -103,21 +79,21 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
   return (
     <section className="relative overflow-hidden pt-8 pb-14 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
       {/* Ambient background glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl h-96 bg-gradient-to-r from-[#F6DCE5]/40 via-[#F3E5F5]/50 to-[#E8D7F7]/40 blur-3xl -z-10 rounded-full pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-5xl h-96 bg-gradient-to-r from-amber-200/30 via-[#F3E5F5]/50 to-orange-200/30 blur-3xl -z-10 rounded-full pointer-events-none" />
 
       {/* Section Header */}
       <div className="text-center max-w-2xl mx-auto mb-10">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-rose-500/10 via-pink-500/10 to-purple-500/10 border border-[#E9A9BB]/60 text-xs font-bold text-[#865B9E] mb-3 shadow-2xs">
-          <Heart className="w-4 h-4 text-rose-500 fill-rose-500 animate-pulse" />
-          <span>BẢNG XẾP HẠNG NHÂN VẬT ĐƯỢC YÊU THÍCH NHẤT</span>
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-purple-500/10 border border-amber-300/60 text-xs font-bold text-amber-800 mb-3 shadow-2xs">
+          <Flame className="w-4 h-4 text-amber-500 fill-amber-400 animate-pulse" />
+          <span>BẢNG XẾP HẠNG THỐNG KÊ CHAT OPENS (HOT CHAT 🔥)</span>
         </div>
 
         <h2 className="font-serif-title text-3xl sm:text-4xl md:text-5xl font-bold text-[#51434A] tracking-tight">
-          Most Loved Characters
+          Hot Chat Leaderboard
         </h2>
 
         <p className="text-xs sm:text-sm text-[#6E5C65] font-light mt-2 max-w-lg mx-auto leading-relaxed">
-          Vinh danh những persona nhận được nhiều lượt yêu thích ❤️ nhất từ cộng đồng người dùng Character Archive.
+          Xếp hạng dựa trên tổng số lượt mở cuộc trò chuyện 🔥 của cộng đồng người dùng dành cho các persona trên Character Archive.
         </p>
       </div>
 
@@ -154,27 +130,13 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                   {top2.character.category || 'Persona'}
                 </p>
 
-                {/* Favorite Heart Button & Count */}
+                {/* Chat Opens Count Badge */}
                 <div className="w-full mt-3 pt-3 border-t border-white/60 flex items-center justify-between text-xs px-2">
-                  <span className="text-[11px] text-[#8E7A84] font-medium">Lượt yêu thích:</span>
-                  <button
-                    type="button"
-                    onClick={(e) => handleToggleFav(top2.character, e)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold transition-all shadow-2xs ${
-                      userFavList.includes(top2.character.id)
-                        ? 'bg-rose-50 border-rose-200 text-rose-600'
-                        : 'bg-white border-white text-[#493B55] hover:text-rose-500'
-                    }`}
-                  >
-                    <Heart
-                      className={`w-3.5 h-3.5 ${
-                        userFavList.includes(top2.character.id)
-                          ? 'fill-rose-500 text-rose-500'
-                          : 'text-[#865B9E]'
-                      }`}
-                    />
-                    <span>{top2.totalFavorites}</span>
-                  </button>
+                  <span className="text-[11px] text-[#8E7A84] font-medium">Lượt mở chat:</span>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-amber-200 text-amber-700 text-xs font-bold shadow-2xs">
+                    <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+                    <span className="font-mono tabular-nums">{top2.totalChats}</span>
+                  </div>
                 </div>
               </div>
             ) : <div className="hidden md:block order-1" />}
@@ -212,27 +174,13 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                 {top1.character.category || 'Persona'} • {top1.character.occupation || 'Archive Legend'}
               </p>
 
-              {/* Favorite Heart Button & Count */}
+              {/* Chat Opens Count Badge */}
               <div className="w-full mt-4 pt-3.5 border-t border-amber-200/60 flex items-center justify-between text-xs px-2">
-                <span className="text-xs text-[#8E7A84] font-bold">Yêu thích nhất:</span>
-                <button
-                  type="button"
-                  onClick={(e) => handleToggleFav(top1.character, e)}
-                  className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-xs font-bold transition-all shadow-sm ${
-                    userFavList.includes(top1.character.id)
-                      ? 'bg-rose-50 border-rose-300 text-rose-600'
-                      : 'bg-white border-amber-300 text-amber-800 hover:text-rose-500'
-                  }`}
-                >
-                  <Heart
-                    className={`w-4 h-4 ${
-                      userFavList.includes(top1.character.id)
-                        ? 'fill-rose-500 text-rose-500 scale-110'
-                        : 'text-amber-500'
-                    }`}
-                  />
-                  <span className="text-sm">{top1.totalFavorites} ❤️</span>
-                </button>
+                <span className="text-xs text-[#8E7A84] font-bold">Lượt mở chat cao nhất:</span>
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border-2 border-amber-300 text-amber-800 text-xs font-bold shadow-sm">
+                  <Flame className="w-4 h-4 text-amber-500 fill-amber-400 shrink-0" />
+                  <span className="text-sm font-mono tabular-nums">{top1.totalChats} 🔥</span>
+                </div>
               </div>
             </div>
 
@@ -243,7 +191,7 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                 className="group relative cursor-pointer rounded-3xl p-5 bg-gradient-to-b from-[#FFF5F7] to-[#FCE4EC] border-2 border-[#F1C0CE] shadow-[0_8px_25px_rgba(216,140,163,0.15)] hover:shadow-[0_12px_35px_rgba(216,140,163,0.25)] hover:-translate-y-1 transition-all duration-300 flex flex-col items-center text-center order-3"
               >
                 {/* Rank Badge #3 */}
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-rose-400 to-amber-500 text-white text-[11px] font-black shadow-md border border-white flex items-center gap-1">
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-gradient-to-r from-amber-600 to-amber-700 text-white text-[11px] font-black shadow-md border border-white flex items-center gap-1">
                   <Award className="w-3.5 h-3.5" />
                   <span>TOP 3</span>
                 </div>
@@ -265,27 +213,13 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                   {top3.character.category || 'Persona'}
                 </p>
 
-                {/* Favorite Heart Button & Count */}
+                {/* Chat Opens Count Badge */}
                 <div className="w-full mt-3 pt-3 border-t border-white/60 flex items-center justify-between text-xs px-2">
-                  <span className="text-[11px] text-[#8E7A84] font-medium">Lượt yêu thích:</span>
-                  <button
-                    type="button"
-                    onClick={(e) => handleToggleFav(top3.character, e)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold transition-all shadow-2xs ${
-                      userFavList.includes(top3.character.id)
-                        ? 'bg-rose-50 border-rose-200 text-rose-600'
-                        : 'bg-white border-white text-[#493B55] hover:text-rose-500'
-                    }`}
-                  >
-                    <Heart
-                      className={`w-3.5 h-3.5 ${
-                        userFavList.includes(top3.character.id)
-                          ? 'fill-rose-500 text-rose-500'
-                          : 'text-[#D88CA3]'
-                      }`}
-                    />
-                    <span>{top3.totalFavorites}</span>
-                  </button>
+                  <span className="text-[11px] text-[#8E7A84] font-medium">Lượt mở chat:</span>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white border border-amber-200 text-amber-700 text-xs font-bold shadow-2xs">
+                    <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+                    <span className="font-mono tabular-nums">{top3.totalChats}</span>
+                  </div>
                 </div>
               </div>
             ) : <div className="hidden md:block order-3" />}
@@ -298,7 +232,7 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
         <div className="max-w-4xl mx-auto bg-white rounded-3xl border border-[#F1D4DF] shadow-xs overflow-hidden">
           <div className="px-6 py-4 border-b border-[#F1D4DF] flex items-center justify-between">
             <span className="font-serif-title font-semibold text-xs sm:text-sm text-[#51434A] flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-[#865B9E]" />
+              <TrendingUp className="w-4 h-4 text-amber-500" />
               <span>Hạng 4 đến Hạng {rankedList.length}</span>
             </span>
           </div>
@@ -312,7 +246,7 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
               >
                 {/* Left: Rank & Avatar & Full Name */}
                 <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
-                  <span className="w-7 sm:w-8 h-7 sm:h-8 rounded-xl bg-[#FFF5F7] text-[#865B9E] font-black text-xs sm:text-sm flex items-center justify-center border border-[#F1D4DF] shadow-2xs shrink-0 group-hover:bg-[#E9A9BB] group-hover:text-white transition-colors">
+                  <span className="w-7 sm:w-8 h-7 sm:h-8 rounded-xl bg-[#FFF5F7] text-amber-700 font-black text-xs sm:text-sm flex items-center justify-center border border-amber-200 shadow-2xs shrink-0 group-hover:bg-amber-400 group-hover:text-white transition-colors">
                     #{item.rank}
                   </span>
 
@@ -334,26 +268,12 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
                   </div>
                 </div>
 
-                {/* Right: Favorite Button & Total Favorites */}
+                {/* Right: Total Chat Opens */}
                 <div className="flex items-center gap-3 shrink-0">
-                  <button
-                    type="button"
-                    onClick={(e) => handleToggleFav(item.character, e)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold transition-all shadow-2xs ${
-                      userFavList.includes(item.character.id)
-                        ? 'bg-rose-50 border-rose-200 text-rose-600'
-                        : 'bg-white border-[#F1D4DF] text-[#51434A] hover:border-rose-200 hover:text-rose-500'
-                    }`}
-                  >
-                    <Heart
-                      className={`w-3.5 h-3.5 ${
-                        userFavList.includes(item.character.id)
-                          ? 'fill-rose-500 text-rose-500'
-                          : 'text-[#865B9E]'
-                      }`}
-                    />
-                    <span>{item.totalFavorites}</span>
-                  </button>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold shadow-2xs">
+                    <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+                    <span className="font-mono tabular-nums">{item.totalChats}</span>
+                  </div>
                 </div>
               </div>
             ))}
