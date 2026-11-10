@@ -25,7 +25,6 @@ import { AboutSection } from './components/public/AboutSection';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { AdminLogin } from './components/admin/AdminLogin';
 import { AdminSetup } from './components/admin/AdminSetup';
-import { TheLounge } from './components/community/TheLounge';
 import { HallOfFame } from './components/community/HallOfFame';
 import { DonatePage } from './components/community/DonatePage';
 import { AuthModal } from './components/community/AuthModal';
@@ -50,7 +49,7 @@ function AppContent() {
   const getInitialView = (): AppView => {
     if (typeof window !== 'undefined' && window.location.hash) {
       const hash = window.location.hash.replace('#', '').trim() as AppView;
-      if (['home', 'library', 'about', 'lounge', 'hall', 'donate', 'reviews', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
+      if (['home', 'library', 'about', 'hall', 'donate', 'reviews', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
         return hash;
       }
     }
@@ -94,7 +93,7 @@ function AppContent() {
     const handleHashChange = () => {
       if (typeof window !== 'undefined' && window.location.hash) {
         const hash = window.location.hash.replace('#', '').trim() as AppView;
-        if (['home', 'library', 'about', 'lounge', 'hall', 'donate', 'reviews', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
+        if (['home', 'library', 'about', 'hall', 'donate', 'reviews', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
           setCurrentView(hash);
         }
       }
@@ -835,16 +834,6 @@ function AppContent() {
               </div>
             )}
           </div>
-        )}
-
-        {currentView === 'lounge' && (
-          <TheLounge
-            onOpenAuth={(mode) => {
-              setAuthModalMode(mode || 'login');
-              setIsAuthModalOpen(true);
-            }}
-            onShowToast={showToast}
-          />
         )}
 
         {currentView === 'hall' && (

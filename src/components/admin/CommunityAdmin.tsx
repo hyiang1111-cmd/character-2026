@@ -3,7 +3,6 @@ import {
   Users,
   Award,
   Crown,
-  MessageSquare,
   Database,
   CheckCircle2,
   XCircle,
@@ -57,8 +56,6 @@ import {
   revokeUserBadge,
   grantManualVip,
   revokeManualVip,
-  getLoungeMessages,
-  deleteLoungeMessage,
   updateCommunityMemberProfile,
   getAvatarCatalog,
   addPresetAvatar,
@@ -119,7 +116,6 @@ export const CommunityAdmin: React.FC<CommunityAdminProps> = ({ onShowToast }) =
   const [donations, setDonationClaims] = useState<DonationClaim[]>([]);
   const [donationConfig, setDonationConfigState] = useState<DonationConfig | null>(null);
   const [vipTiers, setVipTiers] = useState<VipTierConfig[]>(DEFAULT_VIP_TIERS);
-  const [messages, setMessages] = useState<any[]>([]);
   const [avatarCatalog, setAvatarCatalogState] = useState<PresetAvatar[]>([]);
   const [allBadges, setAllBadges] = useState<Badge[]>(SYSTEM_BADGES);
   const [auditLogs, setAuditLogs] = useState<BadgeAuditLog[]>([]);
@@ -195,12 +191,11 @@ export const CommunityAdmin: React.FC<CommunityAdminProps> = ({ onShowToast }) =
   const refreshAll = async () => {
     setIsLoading(true);
     try {
-      const [mList, dList, cfg, vTiers, msgList, avList, bList, logs] = await Promise.all([
+      const [mList, dList, cfg, vTiers, avList, bList, logs] = await Promise.all([
         getAllMemberProfiles(),
         getDonationClaims(),
         getDonationConfig(),
         getVipTiersConfig(),
-        getLoungeMessages(50),
         getAvatarCatalog(),
         getAllBadges(),
         getBadgeAuditLogs(),
@@ -211,7 +206,6 @@ export const CommunityAdmin: React.FC<CommunityAdminProps> = ({ onShowToast }) =
       setDonationConfigState(cfg);
       setVipTiers(vTiers);
       setEditingTiers(vTiers);
-      setMessages(msgList);
       setAvatarCatalogState(avList);
       setAllBadges(bList);
       setAuditLogs(logs);
@@ -695,7 +689,6 @@ export const CommunityAdmin: React.FC<CommunityAdminProps> = ({ onShowToast }) =
           { id: 'badges', label: 'Quản Lý Danh Hiệu & Huy Hiệu', icon: Award },
           { id: 'vip_settings', label: 'Cấu Hình VIP Tiers', icon: Crown },
           { id: 'avatars', label: 'Thư Viện Avatar', icon: ImageIcon },
-          { id: 'chat', label: 'Kiểm Duyệt Chat (The Lounge)', icon: MessageSquare },
           { id: 'supabase', label: 'Supabase & SQL Migration', icon: Database },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -2184,44 +2177,7 @@ export const CommunityAdmin: React.FC<CommunityAdminProps> = ({ onShowToast }) =
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 5: CHAT MODERATION */}
-      {/* ========================================================================= */}
-      {activeTab === 'chat' && (
-        <div className="bg-white rounded-3xl p-6 border border-[#E8D7F7] shadow-2xs space-y-4">
-          <h3 className="font-bold text-base text-[#51434A] flex items-center gap-2">
-            <MessageSquare className="w-5 h-5 text-[#865B9E]" />
-            Kiểm Duyệt Tin Nhắn The Lounge ({messages.length})
-          </h3>
-
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {messages.map((msg) => (
-              <div key={msg.id} className="p-3 rounded-2xl bg-[#FAF6FC] border border-[#E8D7F7] flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <img src={msg.avatar_url} alt={msg.username} className="w-7 h-7 rounded-full object-cover" />
-                  <div className="min-w-0">
-                    <span className="font-bold text-[#51434A]">@{msg.username}: </span>
-                    <span className="text-[#6E5C65]">{msg.content}</span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={async () => {
-                    await deleteLoungeMessage(msg.id);
-                    onShowToast('success', 'Đã xóa tin nhắn');
-                    refreshAll();
-                  }}
-                  className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold shrink-0 ml-2"
-                >
-                  Xóa
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 6: SUPABASE & SQL MIGRATION */}
+      {/* TAB 5: SUPABASE & SQL MIGRATION */}
       {/* ========================================================================= */}
       {activeTab === 'supabase' && (
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-[#E8D7F7] shadow-2xs space-y-6">

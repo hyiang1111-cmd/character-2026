@@ -224,25 +224,6 @@ export interface BadgeAuditLog {
   timestamp: string;
 }
 
-export interface LoungeMessage {
-  id: string;
-  user_id: string;
-  username: string;
-  avatar_url: string;
-  vip_tier: string;
-  content: string;
-  reply_to_id?: string | null;
-  reply_to_username?: string | null;
-  reply_to_content?: string | null;
-  likes_count: number;
-  liked_by_users: string[];
-  is_deleted: boolean;
-  status?: string;
-  created_at: string;
-  updated_at?: string;
-  badges?: Badge[];
-}
-
 export interface DonationClaim {
   id: string;
   user_id: string;
@@ -303,7 +284,7 @@ export const DEFAULT_DONATE_PAGE_CONTENT: DonatePageContent = {
   benefits_info: 'Nhận huy hiệu VIP Supporter lấp lánh bên cạnh Username, viền avatar hoàng kim, điểm danh dự và tích lũy XU vĩnh cửu.',
   banner_url: '',
   post_submission_message: 'Yêu cầu của bạn đã được gửi tới ban quản trị. Admin sẽ kiểm tra giao dịch và phê duyệt trong vòng vài phút đến vài giờ.',
-  contact_info: 'Nếu có bất kỳ thắc mắc hoặc cần hỗ trợ giao dịch, vui lòng gửi tin nhắn trong The Lounge hoặc liên hệ Admin.',
+  contact_info: 'Nếu có bất kỳ thắc mắc hoặc cần hỗ trợ giao dịch, vui lòng liên hệ Admin qua kênh hỗ trợ.',
   success_message: 'Xác nhận ủng hộ thành công! Cảm ơn bạn đã đồng hành và xây dựng thế giới Character Archive.',
 };
 
