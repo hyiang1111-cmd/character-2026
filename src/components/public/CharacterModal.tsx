@@ -24,6 +24,8 @@ interface CharacterModalProps {
   onStartChat: (character: Character) => void;
   onViewChat: (character: Character) => void;
   onShowToast: (type: 'success' | 'error' | 'info', title: string, message?: string) => void;
+  onSelectTag?: (tag: string) => void;
+  onNavigateToReviews?: (characterId: string) => void;
 }
 
 export const CharacterModal: React.FC<CharacterModalProps> = ({
@@ -33,6 +35,8 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
   onStartChat,
   onViewChat,
   onShowToast,
+  onSelectTag,
+  onNavigateToReviews,
 }) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'roleplay' | 'prompt'>('profile');
   const [copied, setCopied] = useState(false);
@@ -170,12 +174,24 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
                 {character.tags && character.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-3">
                     {character.tags.map((t) => (
-                      <span
+                      <button
                         key={t}
-                        className="px-2.5 py-0.5 rounded-full bg-[#FBE6ED] text-[10px] text-[#51434A] border border-[#E9A9BB]/40 font-medium"
+                        type="button"
+                        onClick={() => {
+                          if (onSelectTag) {
+                            onSelectTag(t);
+                            onClose();
+                          }
+                        }}
+                        className={`px-2.5 py-0.5 rounded-full bg-[#FBE6ED] text-[10px] text-[#51434A] border border-[#E9A9BB]/40 font-medium ${
+                          onSelectTag
+                            ? 'hover:bg-[#F3C7D7] hover:text-[#3B2C42] cursor-pointer transition-colors'
+                            : ''
+                        }`}
+                        title={onSelectTag ? `Xem tất cả nhân vật có tag #${t}` : `#${t}`}
                       >
                         #{t}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -461,6 +477,19 @@ export const CharacterModal: React.FC<CharacterModalProps> = ({
           </button>
 
           <div className="flex items-center gap-2">
+            {onNavigateToReviews && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onNavigateToReviews(character.id);
+                }}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#FFF5F7] border border-[#E9A9BB] text-xs font-medium text-[#774D8E] hover:bg-[#FBE6ED] transition-all"
+                title="Viết đánh giá cho nhân vật này"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#D88CA3]" />
+                <span>Đánh giá</span>
+              </button>
+            )}
             <button
               onClick={handleCopyPrompt}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#FFF5F7] border border-[#E9A9BB] text-xs font-medium text-[#51434A] hover:bg-[#FBE6ED] transition-all"

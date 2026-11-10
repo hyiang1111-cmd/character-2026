@@ -2272,43 +2272,39 @@ export const CommunityAdmin: React.FC<CommunityAdminProps> = ({ onShowToast }) =
 
             {/* SQL Snippet */}
             <div className="mt-6 space-y-2">
-              <h4 className="font-bold text-sm text-[#51434A]">SQL Schema Cho Bảng Mới (custom_badges & badge_audit_logs)</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-sm text-[#51434A]">SQL Migration Cho BXH Công Khai & Bảo Mật RLS</h4>
+                <span className="text-[10px] text-[#865B9E] font-mono">Bảng: profiles, views, badges, audit_logs</span>
+              </div>
               <pre className="p-4 rounded-2xl bg-gray-900 text-purple-200 font-mono text-[11px] overflow-x-auto leading-relaxed">
-{`-- Tạo bảng custom_badges
-CREATE TABLE IF NOT EXISTS public.custom_badges (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT,
-    icon TEXT NOT NULL,
-    image_url TEXT,
-    color TEXT NOT NULL,
-    border_style TEXT,
-    glow_color TEXT,
-    animation_effect TEXT,
-    category TEXT NOT NULL,
-    rarity TEXT,
-    condition_type TEXT,
-    condition_value NUMERIC,
-    is_enabled BOOLEAN DEFAULT true,
-    expires_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    created_by TEXT
-);
+{`-- 1. Bổ sung các cột tính điểm cho bảng profiles
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS active_time_seconds INTEGER DEFAULT 0;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS character_chats_count INTEGER DEFAULT 0;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS donation_xu INTEGER DEFAULT 0;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS total_donated NUMERIC DEFAULT 0;
 
--- Tạo bảng badge_audit_logs
-CREATE TABLE IF NOT EXISTS public.badge_audit_logs (
-    id TEXT PRIMARY KEY,
-    action TEXT NOT NULL,
-    admin_id TEXT NOT NULL,
-    admin_name TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    username TEXT NOT NULL,
-    badge_id TEXT NOT NULL,
-    badge_name TEXT NOT NULL,
-    reason TEXT,
-    expires_at TIMESTAMPTZ,
-    timestamp TIMESTAMPTZ DEFAULT NOW()
-);`}
+-- 2. TẠO VIEW BXH CÔNG KHAI (CHỈ HIỂN THỊ THÔNG TIN ĐƯỢC PHÉP, KHÔNG LỘ EMAIL)
+CREATE OR REPLACE VIEW public.public_leaderboard_view AS
+SELECT 
+  id, username, avatar_url, bio, vip_tier, is_admin,
+  active_time_seconds, character_chats_count, characters_explored_count,
+  messages_count, total_donated, donation_xu, active_badge_ids, created_at
+FROM public.profiles
+WHERE is_banned = false;
+
+-- Cấp quyền SELECT trên View cho khách (anon) và thành viên (authenticated)
+GRANT SELECT ON public.public_leaderboard_view TO anon, authenticated;
+
+-- 3. RLS CHÍNH SÁCH BẢO VỆ PROFILES (Cho phép đọc thông tin công khai)
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
+CREATE POLICY "Public profiles are viewable by everyone"
+  ON public.profiles FOR SELECT
+  TO anon, authenticated
+  USING (is_banned = false);
+
+-- 4. BẬT REALTIME CHO BXH TỰ ĐỘNG CẬP NHẬT
+ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;`}
               </pre>
             </div>
           </div>

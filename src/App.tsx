@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CommunityProvider, useCommunity } from './context/CommunityContext';
 import { MusicProvider } from './context/MusicContext';
@@ -17,6 +17,7 @@ import { Hero } from './components/public/Hero';
 import { CharacterCard } from './components/public/CharacterCard';
 import { CharacterModal } from './components/public/CharacterModal';
 import { ScenarioModal } from './components/public/ScenarioModal';
+import { CharacterTagsFilter, CharacterTagItem } from './components/public/CharacterTagsFilter';
 import { WelcomeScreen } from './components/common/WelcomeScreen';
 import { MusicPlayerWidget } from './components/common/MusicPlayerWidget';
 import { MagicTouch } from './components/common/MagicTouch';
@@ -29,8 +30,16 @@ import { HallOfFame } from './components/community/HallOfFame';
 import { DonatePage } from './components/community/DonatePage';
 import { AuthModal } from './components/community/AuthModal';
 import { MemberProfileModal } from './components/community/MemberProfileModal';
+import { CharacterHotRanking } from './components/public/CharacterHotRanking';
+import { CharacterReviewsPage } from './components/community/CharacterReviewsPage';
+import {
+  recordVerifiedCharacterView,
+  recordVerifiedCharacterChat,
+  getCharacterTags,
+  CharacterTagRecord
+} from './services/characterRankingStorage';
 import { isValidHttpsUrl } from './services/promptGenerator';
-import { Sparkles, BookOpen, Layers } from 'lucide-react';
+import { Sparkles, BookOpen, Layers, Search, X } from 'lucide-react';
 
 function AppContent() {
   const { isAdmin } = useAuth();
@@ -40,7 +49,7 @@ function AppContent() {
   const getInitialView = (): AppView => {
     if (typeof window !== 'undefined' && window.location.hash) {
       const hash = window.location.hash.replace('#', '').trim() as AppView;
-      if (['home', 'library', 'about', 'lounge', 'hall', 'donate', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
+      if (['home', 'library', 'about', 'lounge', 'hall', 'donate', 'reviews', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
         return hash;
       }
     }
@@ -50,11 +59,14 @@ function AppContent() {
   // State
   const [characters, setCharacters] = useState<Character[]>([]);
   const [siteContent, setSiteContent] = useState<SiteContent>(DEFAULT_SITE_CONTENT);
+  const [customTags, setCustomTags] = useState<CharacterTagRecord[]>([]);
   const [currentView, setCurrentView] = useState<AppView>(getInitialView);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedTag, setSelectedTag] = useState<string>('');
   const [selectedCharacterModal, setSelectedCharacterModal] = useState<Character | null>(null);
   const [selectedScenarioModal, setSelectedScenarioModal] = useState<Character | null>(null);
+  const [reviewTargetCharacterId, setReviewTargetCharacterId] = useState<string | undefined>(undefined);
   const [showWelcome, setShowWelcome] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       if (window.location.hash.includes('admin')) return false;
@@ -81,7 +93,7 @@ function AppContent() {
     const handleHashChange = () => {
       if (typeof window !== 'undefined' && window.location.hash) {
         const hash = window.location.hash.replace('#', '').trim() as AppView;
-        if (['home', 'library', 'about', 'lounge', 'hall', 'donate', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
+        if (['home', 'library', 'about', 'lounge', 'hall', 'donate', 'reviews', 'admin', 'admin-login', 'admin-setup'].includes(hash)) {
           setCurrentView(hash);
         }
       }
@@ -90,15 +102,17 @@ function AppContent() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  // Load site content and subscribe to characters
+  // Load site content, characters, and tags
   const refreshData = async () => {
     try {
-      const [fetchedChars, fetchedSite] = await Promise.all([
+      const [fetchedChars, fetchedSite, fetchedTags] = await Promise.all([
         getCharacters(isAdmin),
         getSiteContent(),
+        getCharacterTags(),
       ]);
       setCharacters(fetchedChars);
       setSiteContent(fetchedSite);
+      setCustomTags(fetchedTags);
     } catch (err) {
       console.error('Failed to load archive data:', err);
     } finally {
@@ -127,15 +141,17 @@ function AppContent() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Open character modal & track character view for automated achievement badges
+  // Open character modal & track character view for automated achievement badges & hot score
   const handleOpenCharacterDetails = (char: Character) => {
     setSelectedCharacterModal(char);
     trackCharacterView(char.id);
+    recordVerifiedCharacterView(char.id);
   };
 
-  // Direct Google AI Studio Chat action
+  // Direct Google AI Studio Chat action with hot score tracking
   const handleStartChat = (character: Character) => {
     recordChatClick();
+    recordVerifiedCharacterChat(character.id);
     if (character.chatUrl && isValidHttpsUrl(character.chatUrl)) {
       window.open(character.chatUrl, '_blank', 'noopener,noreferrer');
       showToast(
@@ -167,25 +183,148 @@ function AppContent() {
   };
 
   // Filter published characters for public visitors
-  const publishedCharacters = characters.filter((c) => c.status === 'published');
+  const publishedCharacters = useMemo(
+    () => characters.filter((c) => c.status === 'published'),
+    [characters]
+  );
 
-  const filteredCharacters = publishedCharacters.filter((char) => {
-    if (selectedCategory && selectedCategory !== 'All' && char.category !== selectedCategory) {
-      return false;
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const matchName = char.name.toLowerCase().includes(q);
-      const matchFullName = (char.fullName || '').toLowerCase().includes(q);
-      const matchUniverse = (char.universe || '').toLowerCase().includes(q);
-      const matchDesc = (char.shortDescription || '').toLowerCase().includes(q);
-      const matchPersonality = (char.personality || '').toLowerCase().includes(q);
-      if (!matchName && !matchFullName && !matchUniverse && !matchDesc && !matchPersonality) {
-        return false;
+  // Aggregated dynamic character tags directly from published characters' tags array + admin custom tags
+  const aggregatedTags: CharacterTagItem[] = useMemo(() => {
+    const map = new Map<string, { label: string; count: number; color?: string; icon?: string; sortOrder?: number; isActive?: boolean }>();
+
+    // Seed or enrich with custom tags defined in Admin Tag Management
+    customTags.forEach((ct) => {
+      const key = ct.name.toLowerCase().trim();
+      map.set(key, {
+        label: ct.name,
+        count: 0,
+        color: ct.color,
+        icon: ct.icon,
+        sortOrder: ct.sort_order,
+        isActive: ct.is_active,
+      });
+    });
+
+    publishedCharacters.forEach((char) => {
+      if (!Array.isArray(char.tags)) return;
+      const seenKeysInChar = new Set<string>();
+
+      char.tags.forEach((rawTag) => {
+        const clean = String(rawTag || '').trim().replace(/^#+/, '').trim();
+        if (!clean) return;
+        const key = clean.toLowerCase();
+        if (seenKeysInChar.has(key)) return;
+        seenKeysInChar.add(key);
+
+        const existing = map.get(key);
+        if (!existing) {
+          const displayLabel =
+            clean === clean.toLowerCase()
+              ? clean.charAt(0).toUpperCase() + clean.slice(1)
+              : clean;
+          map.set(key, { label: displayLabel, count: 1, isActive: true });
+        } else {
+          existing.count += 1;
+          if (clean !== clean.toLowerCase() && existing.label === existing.label.toLowerCase()) {
+            existing.label = clean;
+          }
+        }
+      });
+    });
+
+    return Array.from(map.entries())
+      .filter(([_, data]) => data.count > 0 && data.isActive !== false)
+      .map(([key, data]) => ({
+        key,
+        label: data.label,
+        count: data.count,
+        color: data.color,
+        icon: data.icon,
+        sortOrder: data.sortOrder,
+      }))
+      .sort((a, b) => {
+        if (a.sortOrder !== undefined && b.sortOrder !== undefined && a.sortOrder !== b.sortOrder) {
+          return a.sortOrder - b.sortOrder;
+        }
+        return b.count - a.count || a.label.localeCompare(b.label);
+      });
+  }, [publishedCharacters, customTags]);
+
+  // Gracefully deselect tag if it is no longer available in the character archive
+  useEffect(() => {
+    if (selectedTag) {
+      const exists = aggregatedTags.some((t) => t.key === selectedTag.toLowerCase());
+      if (!exists) {
+        setSelectedTag('');
       }
     }
-    return true;
-  });
+  }, [aggregatedTags, selectedTag]);
+
+  // Tag click handler: toggles active tag or selects a new one
+  const handleSelectTag = (tagKey: string) => {
+    const normalized = tagKey.toLowerCase().trim().replace(/^#+/, '');
+    if (selectedTag.toLowerCase() === normalized) {
+      setSelectedTag('');
+    } else {
+      setSelectedTag(normalized);
+    }
+  };
+
+  // Filter characters using combined AND logic: Tag filter + Category filter + Search query
+  const filteredCharacters = useMemo(() => {
+    return publishedCharacters.filter((char) => {
+      // 1. Character Tag filter
+      if (selectedTag) {
+        const targetTag = selectedTag.toLowerCase().trim();
+        const hasTag =
+          Array.isArray(char.tags) &&
+          char.tags.some((t) => {
+            const clean = String(t || '').trim().replace(/^#+/, '').toLowerCase();
+            return clean === targetTag;
+          });
+        if (!hasTag) {
+          return false;
+        }
+      }
+
+      // 2. Category filter
+      if (selectedCategory && selectedCategory !== 'All' && char.category !== selectedCategory) {
+        return false;
+      }
+
+      // 3. Search query filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchName = (char.name || '').toLowerCase().includes(q);
+        const matchFullName = (char.fullName || '').toLowerCase().includes(q);
+        const matchNickname = (char.nickname || '').toLowerCase().includes(q);
+        const matchSpecies = (char.species || '').toLowerCase().includes(q);
+        const matchUniverse = (char.universe || '').toLowerCase().includes(q);
+        const matchDesc = (char.shortDescription || char.background || '').toLowerCase().includes(q);
+        const matchPersonality = (char.personality || '').toLowerCase().includes(q);
+        const matchOccupation = (char.occupation || '').toLowerCase().includes(q);
+        const matchTags =
+          Array.isArray(char.tags) &&
+          char.tags.some((t) => String(t || '').toLowerCase().includes(q));
+
+        if (
+          !matchName &&
+          !matchFullName &&
+          !matchNickname &&
+          !matchSpecies &&
+          !matchUniverse &&
+          !matchDesc &&
+          !matchPersonality &&
+          !matchOccupation &&
+          !matchTags
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [publishedCharacters, selectedTag, selectedCategory, searchQuery]);
 
   // Handle First-time Admin Setup view
   if (currentView === 'admin-setup') {
@@ -207,6 +346,7 @@ function AppContent() {
             onStartChat={handleStartChat}
             onViewChat={handleViewChat}
             onShowToast={showToast}
+            onSelectTag={handleSelectTag}
           />
           <ScenarioModal
             character={selectedScenarioModal}
@@ -275,6 +415,7 @@ function AppContent() {
             onStartChat={handleStartChat}
             onViewChat={handleViewChat}
             onShowToast={showToast}
+            onSelectTag={handleSelectTag}
           />
           <ScenarioModal
             character={selectedScenarioModal}
@@ -401,6 +542,12 @@ function AppContent() {
           onStartChat={handleStartChat}
           onViewChat={handleViewChat}
           onShowToast={showToast}
+          onSelectTag={handleSelectTag}
+          onNavigateToReviews={(charId) => {
+            setReviewTargetCharacterId(charId);
+            navigateView('reviews');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
         />
         <ScenarioModal
           character={selectedScenarioModal}
@@ -448,7 +595,22 @@ function AppContent() {
               selectedCategory={selectedCategory}
               onCategoryChange={setSelectedCategory}
               characterCount={publishedCharacters.length}
+              tags={aggregatedTags}
+              selectedTag={selectedTag}
+              onSelectTag={handleSelectTag}
             />
+
+            {/* Character Hot Ranking section: Podium + Top 4-10 */}
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-12">
+              <CharacterHotRanking
+                characters={publishedCharacters}
+                onOpenDetails={handleOpenCharacterDetails}
+                onNavigateToReviews={() => {
+                  navigateView('reviews');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              />
+            </div>
 
             {/* Character Grid or Empty State */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
@@ -456,10 +618,13 @@ function AppContent() {
                 <EmptyState
                   isAdmin={isAdmin}
                   onAddCharacter={() => navigateView('admin')}
-                  isSearchFiltered={Boolean(searchQuery || selectedCategory)}
+                  isSearchFiltered={Boolean(searchQuery || selectedCategory || selectedTag)}
+                  activeTag={selectedTag ? (aggregatedTags.find((t) => t.key === selectedTag.toLowerCase())?.label || selectedTag) : undefined}
+                  searchQuery={searchQuery}
                   onClearFilters={() => {
                     setSearchQuery('');
                     setSelectedCategory('');
+                    setSelectedTag('');
                   }}
                 />
               ) : (
@@ -472,7 +637,7 @@ function AppContent() {
                       </span>
                     </div>
                     <span className="text-xs text-[#8E7A84]">
-                      Showing {filteredCharacters.length} of {publishedCharacters.length}
+                      Hiển thị {filteredCharacters.length} / {publishedCharacters.length} nhân vật
                     </span>
                   </div>
 
@@ -485,6 +650,7 @@ function AppContent() {
                         onOpenScenario={(c) => setSelectedScenarioModal(c)}
                         onStartChat={handleStartChat}
                         onViewChat={handleViewChat}
+                        onSelectTag={handleSelectTag}
                       />
                     ))}
                   </div>
@@ -517,35 +683,35 @@ function AppContent() {
               </p>
             </div>
 
-            {/* Search and filters in Library */}
+            {/* Search and Character Tags Filter in Library */}
             <div className="max-w-2xl mx-auto mb-12 space-y-4">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search characters by name, universe, or traits..."
-                className="w-full px-5 py-3 rounded-full bg-white border border-[#E9A9BB]/60 text-sm text-[#51434A] placeholder-[#8E7A84]/70 shadow-xs focus:outline-none focus:ring-2 focus:ring-[#E9A9BB]/40"
-              />
-
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {(siteContent.categories || ['All']).map((cat) => {
-                  const isSelected =
-                    selectedCategory === cat || (cat === 'All' && selectedCategory === '');
-                  return (
-                    <button
-                      key={cat}
-                      onClick={() => setSelectedCategory(cat === 'All' ? '' : cat)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                        isSelected
-                          ? 'bg-[#E9A9BB] text-white shadow-xs font-semibold'
-                          : 'bg-white border border-[#F1D4DF] text-[#6E5C65] hover:bg-[#FFF5F7]'
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  );
-                })}
+              <div className="relative flex items-center">
+                <Search className="w-5 h-5 text-[#D88CA3] absolute left-4 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Tìm kiếm nhân vật theo tên, tag, vũ trụ, tính cách..."
+                  className="w-full pl-12 pr-10 py-3.5 bg-white rounded-full border border-[#E9A9BB]/60 text-sm text-[#51434A] placeholder-[#8E7A84]/70 shadow-xs focus:outline-none focus:ring-2 focus:ring-[#E9A9BB]/40 focus:border-[#E9A9BB] transition-all"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3.5 p-1 rounded-full text-[#8E7A84] hover:text-[#51434A] hover:bg-[#FFF5F7] transition-all"
+                    title="Xóa tìm kiếm"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
+
+              {/* Dynamic Character Tags Filter directly below search bar */}
+              <CharacterTagsFilter
+                tags={aggregatedTags}
+                selectedTag={selectedTag}
+                onSelectTag={handleSelectTag}
+                totalCount={publishedCharacters.length}
+              />
             </div>
 
             {/* Library Grid or Empty */}
@@ -553,24 +719,45 @@ function AppContent() {
               <EmptyState
                 isAdmin={isAdmin}
                 onAddCharacter={() => navigateView('admin')}
-                isSearchFiltered={Boolean(searchQuery || selectedCategory)}
+                isSearchFiltered={Boolean(searchQuery || selectedCategory || selectedTag)}
+                activeTag={selectedTag ? (aggregatedTags.find((t) => t.key === selectedTag.toLowerCase())?.label || selectedTag) : undefined}
+                searchQuery={searchQuery}
                 onClearFilters={() => {
                   setSearchQuery('');
                   setSelectedCategory('');
+                  setSelectedTag('');
                 }}
               />
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {filteredCharacters.map((char) => (
-                  <CharacterCard
-                    key={char.id}
-                    character={char}
-                    onOpenDetails={handleOpenCharacterDetails}
-                    onOpenScenario={(c) => setSelectedScenarioModal(c)}
-                    onStartChat={handleStartChat}
-                    onViewChat={handleViewChat}
-                  />
-                ))}
+              <div className="space-y-6">
+                <div className="flex items-center justify-between pb-2 border-b border-[#F1D4DF]">
+                  <span className="text-xs font-medium text-[#774D8E]">
+                    {selectedTag ? (
+                      <>
+                        Đang lọc theo Tag: <strong className="font-semibold text-[#51434A]">#{aggregatedTags.find((t) => t.key === selectedTag.toLowerCase())?.label || selectedTag}</strong> ({filteredCharacters.length} nhân vật)
+                      </>
+                    ) : (
+                      <>Tất cả nhân vật ({filteredCharacters.length})</>
+                    )}
+                  </span>
+                  <span className="text-xs text-[#8E7A84]">
+                    Hiển thị {filteredCharacters.length} / {publishedCharacters.length} nhân vật
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {filteredCharacters.map((char) => (
+                    <CharacterCard
+                      key={char.id}
+                      character={char}
+                      onOpenDetails={handleOpenCharacterDetails}
+                      onOpenScenario={(c) => setSelectedScenarioModal(c)}
+                      onStartChat={handleStartChat}
+                      onViewChat={handleViewChat}
+                      onSelectTag={handleSelectTag}
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -587,7 +774,12 @@ function AppContent() {
         )}
 
         {currentView === 'hall' && (
-          <HallOfFame />
+          <HallOfFame
+            onOpenAuth={(mode) => {
+              setAuthModalMode(mode || 'login');
+              setIsAuthModalOpen(true);
+            }}
+          />
         )}
 
         {currentView === 'donate' && (
@@ -597,6 +789,18 @@ function AppContent() {
               setIsAuthModalOpen(true);
             }}
             onShowToast={showToast}
+          />
+        )}
+
+        {currentView === 'reviews' && (
+          <CharacterReviewsPage
+            characters={publishedCharacters}
+            initialCharacterId={reviewTargetCharacterId}
+            onOpenAuth={(mode) => {
+              setAuthModalMode(mode || 'login');
+              setIsAuthModalOpen(true);
+            }}
+            onOpenCharacterDetails={handleOpenCharacterDetails}
           />
         )}
 
@@ -627,6 +831,12 @@ function AppContent() {
         onStartChat={handleStartChat}
         onViewChat={handleViewChat}
         onShowToast={showToast}
+        onSelectTag={handleSelectTag}
+        onNavigateToReviews={(charId) => {
+          setReviewTargetCharacterId(charId);
+          navigateView('reviews');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
       />
 
       <ScenarioModal

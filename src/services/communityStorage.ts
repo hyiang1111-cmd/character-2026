@@ -182,8 +182,48 @@ export interface MemberLeaderboardEntry extends MemberProfile {
   donationRank?: number;
 }
 
-export async function getActivityLeaderboard(limitCount: number = 50): Promise<MemberLeaderboardEntry[]> {
-  const allProfiles = await getAllMemberProfiles();
+export const PUBLIC_LEADERBOARD_COLUMNS =
+  'id, username, avatar_url, bio, vip_tier, is_admin, active_time_seconds, character_chats_count, characters_explored_count, messages_count, total_donated, donation_xu, active_badge_ids, created_at';
+
+export async function getPublicLeaderboardProfiles(): Promise<MemberProfile[]> {
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      // 1. Try querying the dedicated public leaderboard view first (no sensitive columns, anon SELECT granted)
+      const { data: viewData, error: viewError } = await client
+        .from('public_leaderboard_view')
+        .select(PUBLIC_LEADERBOARD_COLUMNS)
+        .order('created_at', { ascending: false });
+
+      if (!viewError && Array.isArray(viewData)) {
+        return viewData as MemberProfile[];
+      }
+
+      // 2. Fallback to profiles table selecting strictly safe public columns (never query email)
+      const { data, error } = await client
+        .from('profiles')
+        .select(PUBLIC_LEADERBOARD_COLUMNS)
+        .eq('is_banned', false)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        throw new Error(error.message || 'Lỗi truy vấn dữ liệu bảng xếp hạng từ Supabase.');
+      }
+
+      return (data || []) as MemberProfile[];
+    } catch (err: any) {
+      console.error('Error fetching Supabase public leaderboard profiles:', err);
+      throw err;
+    }
+  } else {
+    // If Supabase is not yet configured, return active local profiles
+    const local = getLocal<MemberProfile[]>(STORAGE_PROFILES, []);
+    return local.filter((p) => !p.is_banned);
+  }
+}
+
+export async function getActivityLeaderboard(limitCount: number = 100): Promise<MemberLeaderboardEntry[]> {
+  const allProfiles = await getPublicLeaderboardProfiles();
 
   // Filter only members who have valid recorded activity time or character chats
   const activeMembers = allProfiles.filter(
@@ -191,8 +231,8 @@ export async function getActivityLeaderboard(limitCount: number = 50): Promise<M
   );
 
   // Primary Sort: active_time_seconds descending
-  // Tie-breaker Sort: character_chats_count descending
-  // Second Tie-breaker Sort: characters_explored_count descending
+  // Tie-breaker 1 Sort: character_chats_count descending
+  // Tie-breaker 2 Sort: characters_explored_count descending
   const sorted = [...activeMembers].sort((a, b) => {
     const timeA = Number(a.active_time_seconds) || 0;
     const timeB = Number(b.active_time_seconds) || 0;
@@ -215,16 +255,21 @@ export async function getActivityLeaderboard(limitCount: number = 50): Promise<M
 }
 
 export async function getDonationLeaderboard(): Promise<MemberLeaderboardEntry[]> {
-  const allProfiles = await getAllMemberProfiles();
+  const allProfiles = await getPublicLeaderboardProfiles();
 
   // Sort by donation_xu (or total_donated) descending, only for members with approved donation XU > 0
   const sorted = [...allProfiles]
     .map((p) => ({
       ...p,
-      donation_xu: p.donation_xu || Math.floor((p.total_donated || 0) / 1000),
+      donation_xu: p.donation_xu || Math.floor((Number(p.total_donated) || 0) / 1000),
     }))
-    .filter((p) => (p.donation_xu || 0) > 0)
-    .sort((a, b) => (b.donation_xu || 0) - (a.donation_xu || 0));
+    .filter((p) => (p.donation_xu || 0) > 0 || (Number(p.total_donated) || 0) > 0)
+    .sort((a, b) => {
+      const xuA = Number(a.donation_xu) || Math.floor((Number(a.total_donated) || 0) / 1000);
+      const xuB = Number(b.donation_xu) || Math.floor((Number(b.total_donated) || 0) / 1000);
+      if (xuB !== xuA) return xuB - xuA;
+      return (Number(b.total_donated) || 0) - (Number(a.total_donated) || 0);
+    });
 
   // Attach dynamic donation rank
   return sorted.map((p, index) => ({
@@ -665,12 +710,28 @@ export async function updateCommunityMemberProfile(
 export async function getMemberProfileById(userId: string): Promise<MemberProfile | null> {
   const client = getSupabaseClient();
   if (client) {
-    const { data } = await client.from('profiles').select('*').eq('id', userId).maybeSingle();
-    return data as MemberProfile | null;
-  } else {
-    const profiles = getLocal<MemberProfile[]>(STORAGE_PROFILES, []);
-    return profiles.find((p) => p.id === userId) || null;
+    try {
+      const { data, error } = await client.from('profiles').select('*').eq('id', userId).maybeSingle();
+      if (!error && data) {
+        return data as MemberProfile;
+      }
+      // If select('*') restricted by RLS (e.g. guest reading someone else's profile), fallback to public columns
+      const { data: pubData, error: pubError } = await client
+        .from('profiles')
+        .select(PUBLIC_LEADERBOARD_COLUMNS)
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!pubError && pubData) {
+        return pubData as MemberProfile;
+      }
+    } catch (e) {
+      console.warn('Supabase profile fetch error:', e);
+    }
   }
+
+  const profiles = getLocal<MemberProfile[]>(STORAGE_PROFILES, []);
+  return profiles.find((p) => p.id === userId) || null;
 }
 
 export async function getAllMemberProfiles(): Promise<MemberProfile[]> {

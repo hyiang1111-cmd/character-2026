@@ -17,6 +17,9 @@ create table if not exists public.profiles (
   total_donated numeric default 0,
   messages_count integer default 0,
   characters_explored_count integer default 0,
+  active_time_seconds integer default 0,
+  character_chats_count integer default 0,
+  donation_xu integer default 0,
   active_badge_ids text[] default '{}',
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -28,10 +31,11 @@ create unique index if not exists idx_profiles_username_lower on public.profiles
 -- Enable RLS
 alter table public.profiles enable row level security;
 
--- Profiles RLS Policies
+-- Profiles RLS Policies: safe for anon and authenticated
 create policy "Public profiles are viewable by everyone"
   on public.profiles for select
-  using (true);
+  to anon, authenticated
+  using (is_banned = false);
 
 create policy "Users can update their own profile"
   on public.profiles for update
@@ -40,6 +44,29 @@ create policy "Users can update their own profile"
 create policy "Users can insert their own profile on signup"
   on public.profiles for insert
   with check (auth.uid() = id);
+
+-- SECURE PUBLIC VIEW FOR LEADERBOARD
+-- Exposes ONLY public display fields. Never exposes email, phone, or private data.
+create or replace view public.public_leaderboard_view as
+select 
+  id,
+  username,
+  avatar_url,
+  bio,
+  vip_tier,
+  is_admin,
+  active_time_seconds,
+  character_chats_count,
+  characters_explored_count,
+  messages_count,
+  total_donated,
+  donation_xu,
+  active_badge_ids,
+  created_at
+from public.profiles
+where is_banned = false;
+
+grant select on public.public_leaderboard_view to anon, authenticated;
 
 -- 2. BADGES TABLE
 create table if not exists public.badges (

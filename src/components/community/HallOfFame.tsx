@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Trophy,
   Flame,
@@ -10,45 +10,147 @@ import {
   MessageSquare,
   Shield,
   Layers,
-  ChevronRight
+  ChevronRight,
+  RefreshCw,
+  AlertCircle,
+  LogIn,
+  UserCheck,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { useCommunity } from '../../context/CommunityContext';
 import {
   getActivityLeaderboard,
   getDonationLeaderboard,
+  getAllBadges,
   MemberLeaderboardEntry,
   formatActiveTime
 } from '../../services/communityStorage';
+import { getSupabaseClient, Badge, isSupabaseConfigured } from '../../services/supabase';
 import { RankEmblem, LeaderboardType, getRankTierInfo } from './RankEmblem';
 import { HonorCard } from './HonorCard';
 
-export const HallOfFame: React.FC = () => {
+interface HallOfFameProps {
+  onOpenAuth?: (mode?: 'login' | 'register') => void;
+}
+
+export const HallOfFame: React.FC<HallOfFameProps> = ({ onOpenAuth }) => {
   const { openMemberProfileModal, member } = useCommunity();
   const [activeTab, setActiveTab] = useState<LeaderboardType>('activity');
   const [activityList, setActivityList] = useState<MemberLeaderboardEntry[]>([]);
   const [donationList, setDonationList] = useState<MemberLeaderboardEntry[]>([]);
+  const [allBadges, setAllBadges] = useState<Badge[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterMode, setFilterMode] = useState<'all' | 'top5'>('all');
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  const loadData = async () => {
-    setIsLoading(true);
+  const isMountedRef = useRef(true);
+
+  // Load fresh data directly from Supabase
+  const loadData = async (showLoadingSpinner: boolean = true) => {
+    if (showLoadingSpinner) {
+      setIsLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
+    setError(null);
+
     try {
-      const [actData, donData] = await Promise.all([
+      const [actData, donData, badges] = await Promise.all([
         getActivityLeaderboard(100),
         getDonationLeaderboard(),
+        getAllBadges(),
       ]);
+
+      if (!isMountedRef.current) return;
+
       setActivityList(actData);
       setDonationList(donData);
-    } catch (e) {
-      console.warn('Failed to load hall of fame data:', e);
+      setAllBadges(badges);
+      setLastUpdated(new Date());
+    } catch (err: any) {
+      if (!isMountedRef.current) return;
+      console.error('Failed to load hall of fame data from Supabase:', err);
+      setError(
+        err?.message ||
+          'Không thể kết nối đến máy chủ Supabase để tải bảng xếp hạng thực tế. Vui lòng kiểm tra kết nối mạng hoặc cấu hình RLS.'
+      );
+      // As mandated by guidelines: never fill with mock or demo data on failure
+      setActivityList([]);
+      setDonationList([]);
     } finally {
-      setIsLoading(false);
+      if (isMountedRef.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadData();
+    isMountedRef.current = true;
+
+    // 1. Initial immediate fetch
+    loadData(true);
+
+    // 2. Setup Supabase Realtime channel subscription for live updates
+    const client = getSupabaseClient();
+    let channel: any = null;
+
+    if (client) {
+      try {
+        channel = client
+          .channel('realtime:public_leaderboard')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'profiles' },
+            () => {
+              loadData(false);
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'user_badges' },
+            () => {
+              loadData(false);
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'donations' },
+            () => {
+              loadData(false);
+            }
+          )
+          .subscribe();
+      } catch (subErr) {
+        console.warn('Realtime subscription warning (fallback to periodic polling):', subErr);
+      }
+    }
+
+    // 3. Resilient periodic auto-refresh polling (every 25 seconds)
+    const intervalId = setInterval(() => {
+      loadData(false);
+    }, 25000);
+
+    // 4. Tab visibility listener: fetch fresh data as soon as visitor switches back to this tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadData(false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      isMountedRef.current = false;
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (client && channel) {
+        client.removeChannel(channel);
+      }
+    };
   }, []);
 
   const currentList = activeTab === 'activity' ? activityList : donationList;
@@ -81,9 +183,26 @@ export const HallOfFame: React.FC = () => {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-48 bg-amber-200/20 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col items-center">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md shadow-xs text-xs font-bold text-purple-900 mb-4 border border-purple-200/50">
-            <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
-            <span>HỆ THỐNG VINH DANH HUY HIỆU CẤP BẬC CAO CẤP</span>
+          <div className="flex items-center gap-2 flex-wrap justify-center mb-4">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-md shadow-xs text-xs font-bold text-purple-900 border border-purple-200/50">
+              <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+              <span>HỆ THỐNG VINH DANH HUY HIỆU CẤP BẬC CAO CẤP</span>
+            </div>
+
+            {/* Supabase Live Status Indicator & Force Refresh */}
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/80 backdrop-blur-md shadow-xs text-[11px] font-semibold text-purple-800 border border-purple-200/50">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="hidden sm:inline">Dữ liệu thực tế:</span>
+              <span>{lastUpdated.toLocaleTimeString('vi-VN')}</span>
+              <button
+                onClick={() => loadData(false)}
+                disabled={isRefreshing || isLoading}
+                className="p-1 rounded-md hover:bg-purple-100 text-purple-700 transition-colors cursor-pointer"
+                title="Làm mới bảng xếp hạng ngay"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
           </div>
 
           <h1 className="text-3xl md:text-5xl font-black text-[#5C3D75] tracking-tight mb-3 font-serif-title flex items-center justify-center gap-2">
@@ -130,9 +249,9 @@ export const HallOfFame: React.FC = () => {
       </div>
 
       {/* ======================================================== */}
-      {/* 2. CURRENT VIEWER'S PERSONAL STANDING BANNER            */}
+      {/* 2. VIEWER'S PERSONAL STANDING BANNER OR GUEST WELCOME    */}
       {/* ======================================================== */}
-      {member && myRank && myEntry && (
+      {member && myRank && myEntry ? (
         <div className="bg-gradient-to-r from-purple-100/90 via-white to-purple-50 rounded-3xl p-4 sm:p-5 border-2 border-purple-300/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3 sm:gap-4 w-full sm:w-auto">
             <div className="relative shrink-0">
@@ -185,12 +304,63 @@ export const HallOfFame: React.FC = () => {
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
+      ) : !member ? (
+        <div className="bg-gradient-to-r from-purple-50 via-white to-pink-50 rounded-3xl p-4 sm:p-5 border border-purple-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-purple-100 flex items-center justify-center text-purple-700 shrink-0">
+              <Sparkles className="w-5 h-5 text-purple-600" />
+            </div>
+            <div>
+              <p className="text-xs sm:text-sm font-bold text-purple-950">
+                Bạn đang xem Bảng Vinh Danh ở chế độ Khách công khai
+              </p>
+              <p className="text-[11px] text-purple-700/80">
+                Đăng nhập hoặc đăng ký tài khoản để bắt đầu tích lũy thời gian hoạt động và ghi danh trên bảng vàng!
+              </p>
+            </div>
+          </div>
+
+          {onOpenAuth && (
+            <button
+              onClick={() => onOpenAuth('login')}
+              className="px-5 py-2 rounded-2xl bg-[#865B9E] hover:bg-[#734988] text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>Đăng nhập ngay</span>
+            </button>
+          )}
+        </div>
+      ) : null}
+
+      {/* ======================================================== */}
+      {/* ERROR NOTICE CONTAINER (IF SUPABASE CONNECTION FAILS)    */}
+      {/* ======================================================== */}
+      {error && !isLoading && (
+        <div className="p-6 rounded-3xl bg-rose-50 border-2 border-rose-200 text-rose-900 space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+            <h3 className="font-bold text-sm text-rose-950">Không thể đồng bộ dữ liệu thực tế từ Supabase</h3>
+          </div>
+          <p className="text-xs text-rose-800 leading-relaxed">{error}</p>
+          <div className="pt-1 flex items-center gap-3">
+            <button
+              onClick={() => loadData(true)}
+              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Thử lại kết nối</span>
+            </button>
+            <span className="text-[11px] text-rose-600 italic">
+              * Hệ thống tuân thủ nguyên tắc không hiển thị dữ liệu giả/demo khi mất kết nối.
+            </span>
+          </div>
+        </div>
       )}
 
       {/* ======================================================== */}
       {/* 3. TOP 3 CHAMPION PODIUM SHOWCASE                        */}
       {/* ======================================================== */}
-      {!isLoading && currentList.length > 0 && (
+      {!isLoading && !error && currentList.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between px-2">
             <h2 className="text-base sm:text-lg font-black text-purple-950 uppercase tracking-wider flex items-center gap-2">
@@ -250,47 +420,49 @@ export const HallOfFame: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="hidden md:block order-1" />
+              <div className="order-2 md:order-1 p-6 rounded-3xl border-2 border-dashed border-rose-200 bg-rose-50/50 text-center text-xs text-rose-400 font-medium">
+                Vị trí Top 2 đang chờ chủ nhân
+              </div>
             )}
 
-            {/* TOP 1 (SOVEREIGN GOLDEN CROWN) */}
-            {top1 && (
+            {/* TOP 1 (CHAMPION GOLD) - ELEVATED CENTER */}
+            {top1 ? (
               <div
                 onClick={() => openMemberProfileModal(top1.id)}
-                className="order-1 md:order-2 cursor-pointer group bg-gradient-to-b from-[#FFFDF0] via-[#FFFBEB] to-[#FEF3C7] rounded-3xl p-7 md:p-8 border-2 border-amber-400 shadow-xl hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 relative overflow-hidden text-center -mt-2 md:-mt-6 ring-4 ring-amber-300/30"
+                className="order-1 md:order-2 cursor-pointer group bg-gradient-to-b from-[#FFFDF0] via-[#FEF9C3] to-[#FDE047] rounded-3xl p-7 border-3 border-amber-400 shadow-xl hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 relative overflow-hidden text-center md:-mt-4"
               >
-                {/* Glowing Aura Animation */}
-                <div className="absolute top-0 right-0 w-32 h-32 bg-amber-300/30 rounded-full blur-2xl pointer-events-none animate-pulse" />
-                <div className="absolute top-3.5 right-3.5 drop-shadow-md">
+                {/* Shimmer Ambient Aura */}
+                <div className="absolute inset-0 bg-radial from-white/40 via-transparent to-transparent pointer-events-none" />
+
+                <div className="absolute top-3 right-3 drop-shadow-md">
                   <RankEmblem rank={1} type={activeTab} size="lg" />
                 </div>
 
-                <div className="flex flex-col items-center">
-                  <div className="relative mb-3.5">
-                    <div className="absolute -inset-1.5 rounded-full bg-gradient-to-tr from-amber-500 via-yellow-300 to-amber-600 blur-xs animate-spin-slow" />
+                <div className="flex flex-col items-center relative z-10">
+                  <div className="relative mb-3">
                     <img
                       src={top1.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${top1.username}`}
                       alt={top1.username}
-                      className="relative w-24 h-24 rounded-full object-cover border-4 border-amber-300 shadow-lg group-hover:scale-105 transition-transform"
+                      className="w-24 h-24 rounded-full object-cover border-4 border-amber-500 shadow-xl ring-4 ring-amber-300/60 group-hover:scale-105 transition-transform"
                     />
-                    <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-600 via-yellow-600 to-amber-700 text-white text-xs font-black px-4 py-0.5 rounded-full shadow-md flex items-center gap-1.5 border border-amber-200 whitespace-nowrap">
-                      <Crown className="w-3.5 h-3.5 fill-current" />
-                      TOP 1 QUÁN QUÂN
+                    <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-600 to-yellow-600 text-white text-xs font-black px-4 py-0.5 rounded-full shadow-md whitespace-nowrap flex items-center gap-1 border border-amber-300">
+                      <Crown className="w-3.5 h-3.5 fill-current text-amber-200" />
+                      <span>TOP 1 QUÁN QUÂN</span>
                     </div>
                   </div>
 
-                  <h3 className="font-black text-amber-950 text-lg sm:text-xl group-hover:text-amber-700 transition-colors mt-2 font-serif-title">
+                  <h3 className="font-black text-amber-950 text-lg group-hover:text-amber-800 transition-colors mt-2">
                     {top1.username}
                   </h3>
 
-                  <div className="mt-2 text-xs sm:text-sm font-black text-amber-950 bg-amber-200/90 px-4 py-1.5 rounded-full border border-amber-300 shadow-xs">
+                  <div className="mt-2 text-xs font-black text-amber-900 bg-white/90 px-4 py-1.5 rounded-full border border-amber-300 shadow-xs">
                     {activeTab === 'activity' ? (
                       <span className="flex items-center gap-1.5">
-                        <Clock className="w-4 h-4 text-amber-700" />
+                        <Clock className="w-4 h-4 text-amber-600" />
                         {formatActiveTime(top1.active_time_seconds || 0)}
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1.5 text-amber-950">
+                      <span className="flex items-center gap-1.5 text-amber-900">
                         <Coins className="w-4 h-4 text-amber-600" />
                         {(top1.donation_xu || 0).toLocaleString()} XU
                       </span>
@@ -298,20 +470,20 @@ export const HallOfFame: React.FC = () => {
                   </div>
 
                   {activeTab === 'activity' && (
-                    <p className="text-xs text-amber-900/80 mt-1.5 font-medium flex items-center gap-1">
+                    <p className="text-xs text-amber-900/90 mt-1.5 font-bold flex items-center gap-1">
                       <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
                       {top1.character_chats_count || 0} lượt chat hợp lệ
                     </p>
                   )}
                 </div>
               </div>
-            )}
+            ) : null}
 
-            {/* TOP 3 (IMPERIAL AMETHYST) */}
+            {/* TOP 3 (SOVEREIGN PURPLE) */}
             {top3 ? (
               <div
                 onClick={() => openMemberProfileModal(top3.id)}
-                className="order-3 cursor-pointer group bg-gradient-to-b from-[#FAF5FF] via-[#F3E8FF] to-[#E9D5FF] rounded-3xl p-6 border-2 border-purple-400 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden text-center"
+                className="order-3 md:order-3 cursor-pointer group bg-gradient-to-b from-[#FAF5FF] via-[#F3E8FF] to-[#DDD6FE] rounded-3xl p-6 border-2 border-purple-400 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden text-center"
               >
                 <div className="absolute top-3 right-3 drop-shadow-sm">
                   <RankEmblem rank={3} type={activeTab} size="md" />
@@ -356,46 +528,56 @@ export const HallOfFame: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="hidden md:block order-3" />
+              <div className="order-3 md:order-3 p-6 rounded-3xl border-2 border-dashed border-purple-200 bg-purple-50/50 text-center text-xs text-purple-400 font-medium">
+                Vị trí Top 3 đang chờ chủ nhân
+              </div>
             )}
           </div>
         </div>
       )}
 
       {/* ======================================================== */}
-      {/* 4. FULL HONOR CARDS ROSTER (Tất Cả Thẻ Vinh Danh)        */}
+      {/* 4. COMPREHENSIVE RANKED ROSTER & SEARCH/FILTER           */}
       {/* ======================================================== */}
       <div className="space-y-4">
-        {/* Controls Bar: Filter & Search */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white/80 p-3.5 rounded-3xl border border-purple-100 shadow-xs">
-          <div className="flex items-center gap-1 bg-[#FAF6FC] p-1 rounded-2xl border border-purple-100 text-xs font-bold">
-            <button
-              onClick={() => setFilterMode('all')}
-              className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
-                filterMode === 'all'
-                  ? 'bg-purple-700 text-white shadow-2xs'
-                  : 'text-purple-900 hover:bg-white'
-              }`}
-            >
-              Tất Cả Vinh Danh ({currentList.length})
-            </button>
-            <button
-              onClick={() => setFilterMode('top5')}
-              className={`px-4 py-2 rounded-xl transition-all cursor-pointer ${
-                filterMode === 'top5'
-                  ? 'bg-purple-700 text-white shadow-2xs'
-                  : 'text-purple-900 hover:bg-white'
-              }`}
-            >
-              Top 5 Tinh Anh
-            </button>
+        {/* Controls Bar: Search & Quick Filters */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white/80 backdrop-blur-md rounded-3xl p-4 border border-purple-200/60 shadow-xs">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <span className="text-xs font-bold text-purple-950 uppercase tracking-wider flex items-center gap-1.5">
+              <Trophy className="w-4 h-4 text-amber-500" />
+              <span>Danh Sách Thứ Hạng ({filteredList.length})</span>
+            </span>
+
+            <div className="flex items-center gap-1 ml-auto sm:ml-4">
+              <button
+                onClick={() => setFilterMode('all')}
+                className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                  filterMode === 'all'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-purple-100/60 hover:bg-purple-100 text-purple-900'
+                }`}
+              >
+                Tất Cả
+              </button>
+              <button
+                onClick={() => setFilterMode('top5')}
+                className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                  filterMode === 'top5'
+                    ? 'bg-purple-600 text-white shadow-2xs'
+                    : 'bg-purple-100/60 hover:bg-purple-100 text-purple-900'
+                }`}
+              >
+                Chỉ Top 5
+              </button>
+            </div>
           </div>
 
-          <div className="relative min-w-[220px] sm:min-w-[260px]">
-            <Search className="w-4 h-4 text-purple-400 absolute left-3.5 top-3" />
+          {/* Search Box */}
+          <div className="relative w-full sm:w-64">
+            <Search className="w-4 h-4 text-purple-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Tìm theo username thành viên..."
+              placeholder="Tìm theo Username..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3.5 py-2 rounded-2xl bg-[#FAF6FC] border border-purple-200/80 text-xs text-slate-800 placeholder-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400 font-medium"
@@ -405,22 +587,25 @@ export const HallOfFame: React.FC = () => {
 
         {/* List of Member Honor Cards */}
         {isLoading ? (
-          <div className="flex justify-center items-center py-20">
+          <div className="flex flex-col justify-center items-center py-20 space-y-3">
             <div className="w-10 h-10 border-4 border-purple-400 border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs font-bold text-purple-800">Đang tải bảng xếp hạng thực tế từ Supabase...</span>
           </div>
-        ) : filteredList.length === 0 ? (
+        ) : !error && filteredList.length === 0 ? (
           <div className="bg-white/80 rounded-3xl p-12 text-center border border-purple-100 shadow-sm space-y-2">
             <Trophy className="w-16 h-16 text-purple-300 mx-auto stroke-1" />
             <h3 className="text-base font-bold text-purple-900">
-              {searchQuery ? 'Không tìm thấy thành viên phù hợp' : 'Chưa có thành viên nào trên bảng vinh danh'}
+              {searchQuery ? 'Không tìm thấy thành viên phù hợp' : 'Chưa có thành viên nào trên bảng vinh danh thực tế'}
             </h3>
             <p className="text-xs text-purple-600/80">
               {searchQuery
                 ? 'Vui lòng kiểm tra lại từ khóa tìm kiếm.'
-                : 'Tham gia trò chuyện cùng nhân vật và ủng hộ cộng đồng để ghi danh bảng vàng!'}
+                : activeTab === 'activity'
+                ? 'Chưa có thành viên nào ghi nhận thời gian online hoặc lượt tương tác nhân vật.'
+                : 'Chưa có giao dịch ủng hộ nào được Admin xác nhận thành công.'}
             </p>
           </div>
-        ) : (
+        ) : !error ? (
           <div className="space-y-3.5">
             {filteredList.map((entry, index) => {
               // Exact rank calculation based on full list
@@ -434,12 +619,13 @@ export const HallOfFame: React.FC = () => {
                   rank={actualRank}
                   type={activeTab}
                   isCurrentUser={isCurrentUser}
+                  badges={allBadges}
                   onOpenProfile={openMemberProfileModal}
                 />
               );
             })}
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* ======================================================== */}
@@ -491,7 +677,7 @@ export const HallOfFame: React.FC = () => {
 
         <p className="text-[11px] text-slate-500 italic pt-1">
           * Huy hiệu thứ hạng được hệ thống tự động cập nhật ngay khi thành viên tăng hoặc giảm thứ hạng thực tế trên từng bảng.
-          Hai bảng xếp hạng Hoạt Động và Donate hoàn toàn độc lập.
+          Hai bảng xếp hạng Hoạt Động và Donate hoàn toàn độc lập và đồng bộ thời gian thực cho mọi khách truy cập.
         </p>
       </div>
     </div>

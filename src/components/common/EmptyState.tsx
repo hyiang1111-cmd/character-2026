@@ -6,6 +6,8 @@ interface EmptyStateProps {
   onAddCharacter?: () => void;
   isSearchFiltered?: boolean;
   onClearFilters?: () => void;
+  activeTag?: string;
+  searchQuery?: string;
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({
@@ -13,6 +15,8 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   onAddCharacter,
   isSearchFiltered,
   onClearFilters,
+  activeTag,
+  searchQuery,
 }) => {
   return (
     <div className="w-full max-w-xl mx-auto py-16 px-6 text-center">
@@ -42,22 +46,30 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
       </div>
 
       <h3 className="text-2xl sm:text-3xl font-serif-title font-medium text-[#51434A] mb-3">
-        {isSearchFiltered ? 'No matching characters found' : 'No characters available yet.'}
+        {isSearchFiltered
+          ? activeTag
+            ? `Không tìm thấy nhân vật phù hợp với Tag #${activeTag}`
+            : 'Không tìm thấy nhân vật phù hợp'
+          : 'Chưa có nhân vật nào được lưu trữ.'}
       </h3>
 
       <p className="text-[#8E7A84] text-sm sm:text-base max-w-md mx-auto leading-relaxed mb-6 font-light">
         {isSearchFiltered
-          ? 'Try adjusting your search terms or category filter to discover other characters.'
-          : 'Only characters created by the administrator should appear in the public library after publishing.'}
+          ? activeTag && searchQuery
+            ? `Không có nhân vật nào gắn Tag #${activeTag} đồng thời khớp với từ khóa "${searchQuery}". Hãy thử chọn Tag khác hoặc xóa từ khóa tìm kiếm.`
+            : activeTag
+            ? `Hiện chưa có nhân vật nào gắn Tag #${activeTag}. Bạn có thể chọn Tag khác hoặc xem tất cả nhân vật.`
+            : `Không tìm thấy nhân vật nào khớp với từ khóa "${searchQuery}". Hãy thử tìm với tên, thể loại hoặc thuộc tính khác.`
+          : 'Các nhân vật do Quản trị viên khởi tạo và xuất bản sẽ xuất hiện tại đây.'}
       </p>
 
       <div className="flex flex-wrap items-center justify-center gap-3">
         {isSearchFiltered ? (
           <button
             onClick={onClearFilters}
-            className="px-5 py-2.5 rounded-full bg-white border border-[#E9A9BB] text-[#51434A] text-sm font-medium hover:bg-[#FFF5F7] transition-all shadow-sm active:scale-95"
+            className="px-5 py-2.5 rounded-full bg-gradient-to-r from-[#D88CA3] to-[#865B9E] text-white text-sm font-semibold hover:brightness-105 transition-all shadow-sm active:scale-95 cursor-pointer"
           >
-            Clear Search Filters
+            Xóa bộ lọc & Xem tất cả nhân vật
           </button>
         ) : isAdmin && onAddCharacter ? (
           <button

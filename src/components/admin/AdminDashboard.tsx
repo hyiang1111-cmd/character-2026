@@ -21,9 +21,12 @@ import { ContentEditor } from './ContentEditor';
 import { MusicManager } from './MusicManager';
 import { CommunityAdmin } from './CommunityAdmin';
 import { FirebaseSetupGuide } from './FirebaseSetupGuide';
+import { CharacterTagsAdmin } from './CharacterTagsAdmin';
+import { CharacterReviewsAdmin } from './CharacterReviewsAdmin';
+import { CharacterHotRankingAdmin } from './CharacterHotRankingAdmin';
 import { useAuth } from '../../context/AuthContext';
 import { saveCharacter, deleteCharacter, duplicateCharacter } from '../../services/storage';
-import { Music, Crown } from 'lucide-react';
+import { Music, Crown, Tag, Star, Flame } from 'lucide-react';
 
 interface AdminDashboardProps {
   characters: Character[];
@@ -42,8 +45,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onReturnToSite,
   onShowToast,
 }) => {
-  const { logout, currentUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<'characters' | 'community' | 'content' | 'music' | 'firebase'>('characters');
+  const { currentUser, logout } = useAuth();
+  const [activeTab, setActiveTab] = useState<
+    'characters' | 'tags' | 'reviews' | 'hot_ranking' | 'community' | 'content' | 'music' | 'firebase'
+  >('characters');
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [characterToDelete, setCharacterToDelete] = useState<{ id: string; name: string } | null>(null);
@@ -216,6 +221,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </button>
 
             <button
+              onClick={() => setActiveTab('tags')}
+              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeTab === 'tags'
+                  ? 'border-[#E9A9BB] text-[#51434A] font-bold'
+                  : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
+              }`}
+            >
+              <Tag className="w-3.5 h-3.5 text-[#D88CA3]" />
+              <span>Quản lý Character Tags</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('reviews')}
+              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeTab === 'reviews'
+                  ? 'border-[#E9A9BB] text-[#51434A] font-bold'
+                  : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
+              }`}
+            >
+              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+              <span>Đánh giá & Feedback</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('hot_ranking')}
+              className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                activeTab === 'hot_ranking'
+                  ? 'border-[#E9A9BB] text-[#51434A] font-bold'
+                  : 'border-transparent text-[#8E7A84] hover:text-[#51434A]'
+              }`}
+            >
+              <Flame className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+              <span>Cấu hình BXH Hot</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('community')}
               className={`py-3 px-1 border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'community'
@@ -343,6 +384,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 onTogglePublish={handleTogglePublish}
                 onPreview={onPreviewCharacter}
                 categories={siteContent.categories || []}
+                onShowToast={onShowToast}
+              />
+            )}
+
+            {activeTab === 'tags' && (
+              <CharacterTagsAdmin
+                characters={characters}
+                onRefreshData={onRefreshData}
+                onShowToast={onShowToast}
+              />
+            )}
+
+            {activeTab === 'reviews' && (
+              <CharacterReviewsAdmin
+                characters={characters}
+                onRefreshData={onRefreshData}
+                onShowToast={onShowToast}
+              />
+            )}
+
+            {activeTab === 'hot_ranking' && (
+              <CharacterHotRankingAdmin
+                characters={characters}
+                onRefreshData={onRefreshData}
                 onShowToast={onShowToast}
               />
             )}

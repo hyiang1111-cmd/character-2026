@@ -9,6 +9,7 @@ interface CharacterCardProps {
   onOpenScenario: (character: Character) => void;
   onStartChat: (character: Character) => void;
   onViewChat?: (character: Character) => void;
+  onSelectTag?: (tag: string) => void;
 }
 
 export const CharacterCard: React.FC<CharacterCardProps> = ({
@@ -16,6 +17,7 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
   onOpenDetails,
   onOpenScenario,
   onStartChat,
+  onSelectTag,
 }) => {
   const avatar = character.avatarUrl || character.portraitUrl;
   const hasValidChatUrl = Boolean(character.chatUrl && isValidHttpsUrl(character.chatUrl));
@@ -95,12 +97,22 @@ export const CharacterCard: React.FC<CharacterCardProps> = ({
             <div className="flex flex-wrap gap-1.5 mt-2">
               {character.tags && character.tags.length > 0 ? (
                 character.tags.slice(0, 3).map((tag) => (
-                  <span
+                  <button
                     key={tag}
-                    className="inline-block px-2.5 py-0.5 rounded-full bg-white/90 text-[#493B55] text-[10px] font-medium border border-white shadow-2xs truncate max-w-[110px]"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectTag?.(tag);
+                    }}
+                    className={`inline-block px-2.5 py-0.5 rounded-full bg-white/90 text-[#493B55] text-[10px] font-medium border border-white shadow-2xs truncate max-w-[110px] ${
+                      onSelectTag
+                        ? 'hover:bg-[#FFF0F5] hover:text-[#774D8E] hover:border-[#F1D4DF] cursor-pointer transition-colors'
+                        : ''
+                    }`}
+                    title={onSelectTag ? `Lọc nhân vật theo #${tag}` : `#${tag}`}
                   >
                     #{tag}
-                  </span>
+                  </button>
                 ))
               ) : null}
 

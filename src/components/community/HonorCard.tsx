@@ -152,11 +152,14 @@ const MysticRunesWatermark: React.FC<{ color?: string }> = ({ color = '#64748B' 
   </svg>
 );
 
+import { Badge } from '../../services/supabase';
+
 interface HonorCardProps {
   entry: MemberLeaderboardEntry;
   rank: number;
   type: LeaderboardType;
   isCurrentUser?: boolean;
+  badges?: Badge[];
   onOpenProfile: (userId: string) => void;
 }
 
@@ -165,6 +168,7 @@ export const HonorCard: React.FC<HonorCardProps> = ({
   rank,
   type,
   isCurrentUser = false,
+  badges,
   onOpenProfile,
 }) => {
   const tierInfo = getRankTierInfo(rank, type);
@@ -296,6 +300,36 @@ export const HonorCard: React.FC<HonorCardProps> = ({
                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-400 to-amber-600 text-white shadow-2xs">
                   {entry.vip_tier}
                 </span>
+              )}
+
+              {/* Public Member Badges */}
+              {badges && entry.active_badge_ids && entry.active_badge_ids.length > 0 && (
+                <div className="flex items-center gap-1">
+                  {entry.active_badge_ids.slice(0, 3).map((bId) => {
+                    const bObj = badges.find((b) => b.id === bId);
+                    if (!bObj) return null;
+                    return (
+                      <span
+                        key={bObj.id}
+                        style={{
+                          backgroundColor: `${bObj.color}18`,
+                          color: bObj.color,
+                          borderColor: `${bObj.color}50`,
+                          boxShadow: bObj.glow_color ? `0 0 6px ${bObj.glow_color}35` : undefined,
+                        }}
+                        className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold border shadow-2xs"
+                        title={`${bObj.name}: ${bObj.description}`}
+                      >
+                        {bObj.image_url ? (
+                          <img src={bObj.image_url} alt={bObj.name} className="w-3 h-3 object-contain" />
+                        ) : (
+                          <span>{bObj.icon}</span>
+                        )}
+                        <span className="hidden sm:inline">{bObj.name}</span>
+                      </span>
+                    );
+                  })}
+                </div>
               )}
             </div>
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Search, Sparkles, X } from 'lucide-react';
 import { SiteContent } from '../../types/site';
+import { CharacterTagsFilter, CharacterTagItem } from './CharacterTagsFilter';
 
 interface HeroProps {
   siteContent: SiteContent;
@@ -9,6 +10,9 @@ interface HeroProps {
   selectedCategory: string;
   onCategoryChange: (category: string) => void;
   characterCount: number;
+  tags?: CharacterTagItem[];
+  selectedTag?: string;
+  onSelectTag?: (tagKey: string) => void;
 }
 
 export const Hero: React.FC<HeroProps> = ({
@@ -18,6 +22,9 @@ export const Hero: React.FC<HeroProps> = ({
   selectedCategory,
   onCategoryChange,
   characterCount,
+  tags = [],
+  selectedTag = '',
+  onSelectTag,
 }) => {
   const categories = siteContent.categories || [
     'All',
@@ -73,25 +80,42 @@ export const Hero: React.FC<HeroProps> = ({
           </div>
         </div>
 
-        {/* Category Filters */}
-        <div className="flex flex-wrap items-center justify-center gap-2 max-w-2xl mx-auto pt-2">
-          {categories.map((cat) => {
-            const isSelected = selectedCategory === cat || (cat === 'All' && selectedCategory === '');
-            return (
-              <button
-                key={cat}
-                onClick={() => onCategoryChange(cat === 'All' ? '' : cat)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
-                  isSelected
-                    ? 'bg-[#E9A9BB] text-white shadow-xs font-semibold scale-105'
-                    : 'bg-white/80 border border-[#F1D4DF] text-[#6E5C65] hover:border-[#E9A9BB] hover:bg-white'
-                }`}
-              >
-                {cat}
-              </button>
-            );
-          })}
-        </div>
+        {/* Dynamic Character Tags Filter immediately below search bar */}
+        {onSelectTag && (
+          <div className="mb-4">
+            <CharacterTagsFilter
+              tags={tags}
+              selectedTag={selectedTag}
+              onSelectTag={onSelectTag}
+              totalCount={characterCount}
+            />
+          </div>
+        )}
+
+        {/* Category Filters (Optional Archetype pills) */}
+        {categories.length > 1 && (
+          <div className="flex flex-wrap items-center justify-center gap-1.5 max-w-2xl mx-auto pt-1 opacity-80 hover:opacity-100 transition-opacity">
+            <span className="text-[11px] uppercase tracking-wider text-[#8E7A84] font-medium mr-1">
+              Thể loại:
+            </span>
+            {categories.map((cat) => {
+              const isSelected = selectedCategory === cat || (cat === 'All' && selectedCategory === '');
+              return (
+                <button
+                  key={cat}
+                  onClick={() => onCategoryChange(cat === 'All' ? '' : cat)}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+                    isSelected
+                      ? 'bg-[#E9A9BB] text-white shadow-2xs font-semibold'
+                      : 'bg-white/70 border border-[#F1D4DF] text-[#6E5C65] hover:border-[#E9A9BB] hover:bg-white'
+                  }`}
+                >
+                  {cat}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );
