@@ -7,9 +7,19 @@ import {
   LoungeMessage,
   DonationClaim,
   DonationConfig,
+  BankAccount,
+  DonatePageContent,
+  SuggestedDonateAmount,
+  QrCodeImage,
+  BadgeAuditLog,
   VipTierConfig,
   DEFAULT_VIP_TIERS,
-  SYSTEM_BADGES
+  SYSTEM_BADGES,
+  PresetAvatar,
+  DEFAULT_PRESET_AVATARS,
+  DEFAULT_BANK_ACCOUNTS,
+  DEFAULT_DONATE_PAGE_CONTENT,
+  DEFAULT_SUGGESTED_AMOUNTS
 } from './supabase';
 
 // Local Fallback Storage Keys
@@ -21,6 +31,9 @@ const STORAGE_DONATIONS = 'pca_community_donations';
 const STORAGE_DONATION_CONFIG = 'pca_community_donation_config';
 const STORAGE_VIP_TIERS_CONFIG = 'pca_community_vip_tiers_config';
 const STORAGE_EXPLORED_SET = 'pca_community_explored_set';
+const STORAGE_AVATAR_CATALOG = 'pca_community_avatar_catalog';
+const STORAGE_CUSTOM_BADGES = 'pca_community_custom_badges';
+const STORAGE_BADGE_AUDIT_LOGS = 'pca_community_badge_audit_logs';
 
 function getLocal<T>(key: string, defaultValue: T): T {
   if (typeof window === 'undefined') return defaultValue;
@@ -41,13 +54,29 @@ function setLocal<T>(key: string, value: T): void {
   }
 }
 
-// Default Donation Config
+// Default Donation Config with full multi-bank and custom page copy
 export const DEFAULT_DONATION_CONFIG: DonationConfig = {
   bank_name: 'MB Bank (Ngân hàng Quân Đội)',
   account_number: '0388998899',
   account_holder: 'CHARACTER ARCHIVE ADMIN',
-  qr_code_url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80',
+  qr_code_url: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=600&q=80',
   transfer_note_prefix: 'ARCHIVE VIP',
+  accounts: DEFAULT_BANK_ACCOUNTS,
+  page_content: DEFAULT_DONATE_PAGE_CONTENT,
+  suggested_amounts: DEFAULT_SUGGESTED_AMOUNTS,
+  min_amount: 10000,
+  allow_custom_amount: true,
+  xu_conversion_rate: 1000,
+  qr_images: [
+    {
+      id: 'qr_default_1',
+      title: 'Mã QR MB Bank Chính Thức',
+      url: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&w=600&q=80',
+      description: 'Mã VietQR chuyển khoản nhanh 24/7 qua mọi ứng dụng ngân hàng.',
+      bank_account_id: 'bank_mb_default',
+      uploaded_at: new Date().toISOString(),
+    },
+  ],
 };
 
 // ==========================================
@@ -145,28 +174,40 @@ export async function recalculateAllMemberVipTiers(tiersConfig?: VipTierConfig[]
 // ==========================================
 // LEADERBOARDS (HALL OF FAME) HELPERS
 // ==========================================
+// LEADERBOARDS (HALL OF FAME) HELPERS
+// ==========================================
 
 export interface MemberLeaderboardEntry extends MemberProfile {
   activityRank?: number;
   donationRank?: number;
 }
 
-export async function getActivityLeaderboard(limitCount: number = 20): Promise<MemberLeaderboardEntry[]> {
+export async function getActivityLeaderboard(limitCount: number = 50): Promise<MemberLeaderboardEntry[]> {
   const allProfiles = await getAllMemberProfiles();
+
+  // Filter only members who have valid recorded activity time or character chats
+  const activeMembers = allProfiles.filter(
+    (p) => (Number(p.active_time_seconds) || 0) > 0 || (Number(p.character_chats_count) || 0) > 0
+  );
 
   // Primary Sort: active_time_seconds descending
   // Tie-breaker Sort: character_chats_count descending
-  const sorted = [...allProfiles].sort((a, b) => {
+  // Second Tie-breaker Sort: characters_explored_count descending
+  const sorted = [...activeMembers].sort((a, b) => {
     const timeA = Number(a.active_time_seconds) || 0;
     const timeB = Number(b.active_time_seconds) || 0;
     if (timeB !== timeA) return timeB - timeA;
 
     const chatsA = Number(a.character_chats_count) || 0;
     const chatsB = Number(b.character_chats_count) || 0;
-    return chatsB - chatsA;
+    if (chatsB !== chatsA) return chatsB - chatsA;
+
+    const expA = Number(a.characters_explored_count) || 0;
+    const expB = Number(b.characters_explored_count) || 0;
+    return expB - expA;
   });
 
-  // Attach activity rank (Top 20 only)
+  // Attach dynamic activity rank
   return sorted.slice(0, limitCount).map((p, index) => ({
     ...p,
     activityRank: index + 1,
@@ -176,16 +217,16 @@ export async function getActivityLeaderboard(limitCount: number = 20): Promise<M
 export async function getDonationLeaderboard(): Promise<MemberLeaderboardEntry[]> {
   const allProfiles = await getAllMemberProfiles();
 
-  // Sort by donation_xu (or total_donated) descending
+  // Sort by donation_xu (or total_donated) descending, only for members with approved donation XU > 0
   const sorted = [...allProfiles]
     .map((p) => ({
       ...p,
       donation_xu: p.donation_xu || Math.floor((p.total_donated || 0) / 1000),
     }))
-    .filter((p) => p.donation_xu > 0)
-    .sort((a, b) => b.donation_xu - a.donation_xu);
+    .filter((p) => (p.donation_xu || 0) > 0)
+    .sort((a, b) => (b.donation_xu || 0) - (a.donation_xu || 0));
 
-  // Attach donation rank (Unlimited list)
+  // Attach dynamic donation rank
   return sorted.map((p, index) => ({
     ...p,
     donationRank: index + 1,
@@ -194,7 +235,7 @@ export async function getDonationLeaderboard(): Promise<MemberLeaderboardEntry[]
 
 export async function getMemberRanksMap(): Promise<Record<string, { activityRank?: number; donationRank?: number }>> {
   const [actBoard, donBoard] = await Promise.all([
-    getActivityLeaderboard(20),
+    getActivityLeaderboard(200),
     getDonationLeaderboard(),
   ]);
 
@@ -321,11 +362,13 @@ export async function registerCommunityMember(
       return { profile: null as any, error: authErr?.message || 'Đăng ký tài khoản thất bại.' };
     }
 
+    const defaultAvatar = await getDefaultAvatarUrl();
+
     const newProfile: MemberProfile = {
       id: authData.user.id,
       username: cleanUsername,
       email: cleanEmail,
-      avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanUsername}`,
+      avatar_url: defaultAvatar,
       bio: 'Chào mừng bạn đến với Character Archive Lounge!',
       is_admin: false,
       is_banned: false,
@@ -358,12 +401,13 @@ export async function registerCommunityMember(
       return { profile: null as any, error: `Email "${cleanEmail}" đã được đăng ký cho tài khoản khác.` };
     }
 
+    const defaultAvatar = await getDefaultAvatarUrl();
     const newId = 'user_' + Math.random().toString(36).substring(2, 10);
     const newProfile: MemberProfile = {
       id: newId,
       username: cleanUsername,
       email: cleanEmail,
-      avatar_url: `https://api.dicebear.com/7.x/bottts/svg?seed=${cleanUsername}`,
+      avatar_url: defaultAvatar,
       bio: 'Chào mừng bạn đến với Character Archive Lounge!',
       is_admin: false,
       is_banned: false,
@@ -459,6 +503,119 @@ export async function getCurrentCommunityMember(): Promise<MemberProfile | null>
     if (!currentId) return null;
     const profiles = getLocal<MemberProfile[]>(STORAGE_PROFILES, []);
     return profiles.find((p) => p.id === currentId) || null;
+  }
+}
+
+export async function ensureAdminMemberProfile(adminUser: {
+  email: string | null;
+  name: string | null;
+  uid: string | null;
+}): Promise<MemberProfile> {
+  const adminId = adminUser.uid || 'admin_user';
+  const adminEmail = (adminUser.email || 'admin@archive.com').toLowerCase().trim();
+  const adminUsername = (adminUser.name || adminEmail.split('@')[0] || 'Admin').trim();
+
+  const client = getSupabaseClient();
+  const defaultAvatar = await getDefaultAvatarUrl();
+
+  if (client) {
+    // 1. Check if profile exists by ID
+    const { data: existingProfile } = await client
+      .from('profiles')
+      .select('*')
+      .eq('id', adminId)
+      .maybeSingle();
+
+    if (existingProfile) {
+      if (!existingProfile.is_admin) {
+        await client.from('profiles').update({ is_admin: true }).eq('id', adminId);
+        existingProfile.is_admin = true;
+      }
+      return existingProfile as MemberProfile;
+    }
+
+    // 2. Check if profile exists by Email
+    const { data: emailProfile } = await client
+      .from('profiles')
+      .select('*')
+      .ilike('email', adminEmail)
+      .maybeSingle();
+
+    if (emailProfile) {
+      if (!emailProfile.is_admin) {
+        await client.from('profiles').update({ is_admin: true }).eq('id', emailProfile.id);
+        emailProfile.is_admin = true;
+      }
+      return emailProfile as MemberProfile;
+    }
+
+    // 3. Create new Admin Member Profile
+    const newAdminProfile: MemberProfile = {
+      id: adminId,
+      username: adminUsername,
+      email: adminEmail,
+      avatar_url: defaultAvatar,
+      bio: 'Quản trị viên tối cao Character Archive',
+      is_admin: true,
+      is_banned: false,
+      vip_tier: 'none',
+      is_manual_vip: false,
+      total_donated: 0,
+      messages_count: 0,
+      characters_explored_count: 0,
+      active_time_seconds: 0,
+      character_chats_count: 0,
+      donation_xu: 0,
+      active_badge_ids: ['founder', 'newcomer'],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    await client.from('profiles').insert([newAdminProfile]);
+    await grantUserBadge(adminId, 'founder');
+    await grantUserBadge(adminId, 'newcomer');
+
+    return newAdminProfile;
+  } else {
+    const profiles = getLocal<MemberProfile[]>(STORAGE_PROFILES, []);
+    let profile = profiles.find((p) => p.id === adminId || p.email.toLowerCase() === adminEmail);
+
+    if (profile) {
+      profile.is_admin = true;
+      setLocal(STORAGE_PROFILES, profiles);
+      setLocal(STORAGE_CURRENT_USER_ID, profile.id);
+      return profile;
+    }
+
+    const newAdminProfile: MemberProfile = {
+      id: adminId,
+      username: adminUsername,
+      email: adminEmail,
+      avatar_url: defaultAvatar,
+      bio: 'Quản trị viên tối cao Character Archive',
+      is_admin: true,
+      is_banned: false,
+      vip_tier: 'none',
+      is_manual_vip: false,
+      total_donated: 0,
+      messages_count: 0,
+      characters_explored_count: 0,
+      active_time_seconds: 0,
+      character_chats_count: 0,
+      donation_xu: 0,
+      active_badge_ids: ['founder', 'newcomer'],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    profiles.push(newAdminProfile);
+    setLocal(STORAGE_PROFILES, profiles);
+    setLocal(STORAGE_CURRENT_USER_ID, adminId);
+
+    await grantUserBadge(adminId, 'founder');
+    await grantUserBadge(adminId, 'newcomer');
+
+    return newAdminProfile;
   }
 }
 
@@ -784,65 +941,402 @@ export async function checkAndGrantAutoBadges(user: MemberProfile): Promise<stri
 }
 
 // ==========================================
-// BADGE MANAGEMENT & MANUAL ASSIGNMENTS
+// ASSET IMAGE UPLOADER (QR CODES & BADGES)
 // ==========================================
 
-export async function getUserBadges(userId: string): Promise<UserBadge[]> {
+export async function uploadAssetImage(file: File, folder: string = 'qr_codes'): Promise<string> {
+  const client = getSupabaseClient();
+  const fileExt = file.name.split('.').pop()?.toLowerCase() || 'png';
+  const cleanName = `${folder}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+
+  // 1. Try Supabase Storage first if client is connected
+  if (client) {
+    try {
+      const { data, error } = await client.storage
+        .from('community_assets')
+        .upload(`${folder}/${cleanName}`, file, {
+          cacheControl: '3600',
+          upsert: true,
+        });
+
+      if (!error && data) {
+        const { data: publicUrlData } = client.storage
+          .from('community_assets')
+          .getPublicUrl(`${folder}/${cleanName}`);
+
+        if (publicUrlData?.publicUrl) {
+          return publicUrlData.publicUrl;
+        }
+      }
+    } catch (err) {
+      console.warn('Supabase storage upload fallback to canvas base64:', err);
+    }
+  }
+
+  // 2. Resilient Fallback: compress image via in-memory Canvas and return clean Base64 data URL
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 800; // max dimension keeps size crisp yet lightweight (~100-250KB)
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(e.target?.result as string);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const isTransparent = file.type.includes('png') || file.type.includes('webp');
+        const mime = isTransparent ? 'image/png' : 'image/jpeg';
+        const dataUrl = canvas.toDataURL(mime, isTransparent ? undefined : 0.88);
+        resolve(dataUrl);
+      };
+      img.onerror = () => resolve(e.target?.result as string);
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
+// ==========================================
+// BADGE REPOSITORY & AUDIT LOGS
+// ==========================================
+
+export async function getAllBadges(): Promise<Badge[]> {
+  const client = getSupabaseClient();
+  let custom: Badge[] = [];
+
+  if (client) {
+    try {
+      const { data } = await client.from('custom_badges').select('*').order('created_at', { ascending: false });
+      if (data && data.length > 0) {
+        custom = data as Badge[];
+      }
+    } catch (e) {
+      custom = getLocal<Badge[]>(STORAGE_CUSTOM_BADGES, []);
+    }
+  } else {
+    custom = getLocal<Badge[]>(STORAGE_CUSTOM_BADGES, []);
+  }
+
+  // Combine system badges + custom badges (deduplicating by id)
+  const combinedMap = new Map<string, Badge>();
+  SYSTEM_BADGES.forEach((b) => combinedMap.set(b.id, b));
+  custom.forEach((b) => combinedMap.set(b.id, b));
+
+  return Array.from(combinedMap.values());
+}
+
+export async function createCustomBadge(
+  badge: Partial<Badge> & { name: string; icon: string; color: string; category: string },
+  createdBy?: string
+): Promise<Badge> {
+  const newBadge: Badge = {
+    id: badge.id || 'badge_' + Math.random().toString(36).substring(2, 8) + '_' + Date.now(),
+    name: badge.name,
+    description: badge.description || '',
+    icon: badge.icon,
+    image_url: badge.image_url,
+    color: badge.color,
+    border_style: badge.border_style || 'solid',
+    glow_color: badge.glow_color,
+    animation_effect: badge.animation_effect || 'none',
+    category: badge.category,
+    rarity: badge.rarity || 'rare',
+    condition_type: badge.condition_type || 'admin_grant',
+    condition_value: badge.condition_value || 1,
+    is_enabled: badge.is_enabled !== false,
+    expires_at: badge.expires_at || null,
+    created_at: new Date().toISOString(),
+    created_by: createdBy || badge.created_by,
+  };
+
   const client = getSupabaseClient();
   if (client) {
-    const { data } = await client
-      .from('user_badges')
-      .select('*, badge:badges(*)')
-      .eq('user_id', userId);
+    try {
+      await client.from('custom_badges').insert([newBadge]);
+    } catch (e) {
+      console.warn('Supabase custom_badges insert error:', e);
+    }
+  }
 
-    return (data || []) as UserBadge[];
+  const custom = getLocal<Badge[]>(STORAGE_CUSTOM_BADGES, []);
+  custom.unshift(newBadge);
+  setLocal(STORAGE_CUSTOM_BADGES, custom);
+
+  return newBadge;
+}
+
+export async function updateBadge(id: string, updates: Partial<Badge>): Promise<void> {
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('custom_badges').update(updates).eq('id', id);
+    } catch (e) {
+      console.warn('Supabase custom_badges update warning:', e);
+    }
+  }
+
+  const custom = getLocal<Badge[]>(STORAGE_CUSTOM_BADGES, []);
+  const idx = custom.findIndex((b) => b.id === id);
+  if (idx !== -1) {
+    custom[idx] = { ...custom[idx], ...updates };
+    setLocal(STORAGE_CUSTOM_BADGES, custom);
+  }
+}
+
+export async function deleteCustomBadge(id: string): Promise<void> {
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('custom_badges').delete().eq('id', id);
+      await client.from('user_badges').delete().eq('badge_id', id);
+    } catch (e) {
+      console.warn('Supabase custom_badges delete warning:', e);
+    }
+  }
+
+  const custom = getLocal<Badge[]>(STORAGE_CUSTOM_BADGES, []);
+  setLocal(STORAGE_CUSTOM_BADGES, custom.filter((b) => b.id !== id));
+
+  // Also clean up from user_badges
+  const uBadges = getLocal<UserBadge[]>(STORAGE_USER_BADGES, []);
+  setLocal(STORAGE_USER_BADGES, uBadges.filter((ub) => ub.badge_id !== id));
+}
+
+export async function getBadgeAuditLogs(): Promise<BadgeAuditLog[]> {
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      const { data } = await client.from('badge_audit_logs').select('*').order('timestamp', { ascending: false });
+      if (data) return data as BadgeAuditLog[];
+    } catch (e) {
+      // fallback
+    }
+  }
+  return getLocal<BadgeAuditLog[]>(STORAGE_BADGE_AUDIT_LOGS, []);
+}
+
+export async function addBadgeAuditLog(log: Omit<BadgeAuditLog, 'id' | 'timestamp'>): Promise<void> {
+  const newLog: BadgeAuditLog = {
+    ...log,
+    id: 'log_' + Math.random().toString(36).substring(2, 10),
+    timestamp: new Date().toISOString(),
+  };
+
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('badge_audit_logs').insert([newLog]);
+    } catch (e) {
+      // fallback
+    }
+  }
+
+  const logs = getLocal<BadgeAuditLog[]>(STORAGE_BADGE_AUDIT_LOGS, []);
+  logs.unshift(newLog);
+  setLocal(STORAGE_BADGE_AUDIT_LOGS, logs.slice(0, 200));
+}
+
+export async function getUserBadges(userId: string): Promise<UserBadge[]> {
+  const allBadges = await getAllBadges();
+  const now = new Date();
+
+  const client = getSupabaseClient();
+  let userOwned: UserBadge[] = [];
+
+  if (client) {
+    try {
+      const { data } = await client
+        .from('user_badges')
+        .select('*')
+        .eq('user_id', userId);
+
+      userOwned = (data || []) as UserBadge[];
+    } catch (e) {
+      const uBadges = getLocal<UserBadge[]>(STORAGE_USER_BADGES, []);
+      userOwned = uBadges.filter((ub) => ub.user_id === userId);
+    }
   } else {
     const uBadges = getLocal<UserBadge[]>(STORAGE_USER_BADGES, []);
-    const userOwned = uBadges.filter((ub) => ub.user_id === userId);
-    return userOwned.map((ub) => {
-      const bObj = SYSTEM_BADGES.find((b) => b.id === ub.badge_id);
-      return { ...ub, badge: bObj };
-    });
+    userOwned = uBadges.filter((ub) => ub.user_id === userId);
   }
+
+  // Filter out expired badges & attach full badge object
+  const active = userOwned.filter((ub) => !ub.expires_at || new Date(ub.expires_at) > now);
+
+  return active.map((ub) => {
+    const bObj = allBadges.find((b) => b.id === ub.badge_id);
+    return { ...ub, badge: bObj };
+  });
 }
 
 export async function grantUserBadge(
   userId: string,
   badgeId: string,
   adminId?: string,
-  notes?: string
+  notes?: string,
+  expiresAt?: string | null,
+  grantType: 'automatic' | 'admin_awarded' = 'admin_awarded',
+  adminName: string = 'Admin',
+  badgeName?: string,
+  username?: string
 ): Promise<void> {
   const client = getSupabaseClient();
+  const payload: UserBadge = {
+    id: 'ub_' + Math.random().toString(36).substring(2, 10),
+    user_id: userId,
+    badge_id: badgeId,
+    granted_at: new Date().toISOString(),
+    granted_by: adminId,
+    grant_type: grantType,
+    expires_at: expiresAt || null,
+    notes: notes || '',
+  };
+
   if (client) {
-    await client
-      .from('user_badges')
-      .insert([{ user_id: userId, badge_id: badgeId, granted_by: adminId || null, notes: notes || '' }])
-      .select();
-  } else {
-    const uBadges = getLocal<UserBadge[]>(STORAGE_USER_BADGES, []);
-    if (!uBadges.some((ub) => ub.user_id === userId && ub.badge_id === badgeId)) {
-      uBadges.push({
-        id: 'ub_' + Math.random().toString(36).substring(2, 10),
-        user_id: userId,
-        badge_id: badgeId,
-        granted_at: new Date().toISOString(),
-        granted_by: adminId,
-        notes: notes || '',
-      });
-      setLocal(STORAGE_USER_BADGES, uBadges);
+    try {
+      // Delete old entry for this badge if exists so we can update clean
+      await client.from('user_badges').delete().eq('user_id', userId).eq('badge_id', badgeId);
+      await client.from('user_badges').insert([payload]);
+    } catch (e) {
+      console.warn('Supabase user_badges insert warning:', e);
     }
+  }
+
+  const uBadges = getLocal<UserBadge[]>(STORAGE_USER_BADGES, []);
+  const filtered = uBadges.filter((ub) => !(ub.user_id === userId && ub.badge_id === badgeId));
+  filtered.push(payload);
+  setLocal(STORAGE_USER_BADGES, filtered);
+
+  // Write Audit Log if granted by Admin
+  if (adminId) {
+    await addBadgeAuditLog({
+      action: 'grant',
+      admin_id: adminId,
+      admin_name: adminName,
+      user_id: userId,
+      username: username || 'Thành viên',
+      badge_id: badgeId,
+      badge_name: badgeName || badgeId,
+      reason: notes || (grantType === 'admin_awarded' ? 'Admin trao danh hiệu' : 'Tự động mở khóa'),
+      expires_at: expiresAt || null,
+    });
   }
 }
 
-export async function revokeUserBadge(userId: string, badgeId: string): Promise<void> {
+export async function revokeUserBadge(
+  userId: string,
+  badgeId: string,
+  adminId?: string,
+  reason?: string,
+  adminName: string = 'Admin',
+  badgeName?: string,
+  username?: string
+): Promise<void> {
   const client = getSupabaseClient();
   if (client) {
-    await client.from('user_badges').delete().eq('user_id', userId).eq('badge_id', badgeId);
+    try {
+      await client.from('user_badges').delete().eq('user_id', userId).eq('badge_id', badgeId);
+    } catch (e) {
+      console.warn('Supabase user_badges delete warning:', e);
+    }
+  }
+
+  const uBadges = getLocal<UserBadge[]>(STORAGE_USER_BADGES, []);
+  const filtered = uBadges.filter((ub) => !(ub.user_id === userId && ub.badge_id === badgeId));
+  setLocal(STORAGE_USER_BADGES, filtered);
+
+  if (adminId) {
+    await addBadgeAuditLog({
+      action: 'revoke',
+      admin_id: adminId,
+      admin_name: adminName,
+      user_id: userId,
+      username: username || 'Thành viên',
+      badge_id: badgeId,
+      badge_name: badgeName || badgeId,
+      reason: reason || 'Admin gỡ danh hiệu',
+    });
+  }
+}
+
+export async function updateUserBadgeExpiry(
+  userId: string,
+  badgeId: string,
+  expiresAt: string | null,
+  adminId?: string,
+  adminName: string = 'Admin'
+): Promise<void> {
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('user_badges').update({ expires_at: expiresAt }).eq('user_id', userId).eq('badge_id', badgeId);
+    } catch (e) {
+      // fallback
+    }
+  }
+
+  const uBadges = getLocal<UserBadge[]>(STORAGE_USER_BADGES, []);
+  const idx = uBadges.findIndex((ub) => ub.user_id === userId && ub.badge_id === badgeId);
+  if (idx !== -1) {
+    uBadges[idx].expires_at = expiresAt;
+    setLocal(STORAGE_USER_BADGES, uBadges);
+  }
+
+  if (adminId) {
+    await addBadgeAuditLog({
+      action: 'update_expiry',
+      admin_id: adminId,
+      admin_name: adminName,
+      user_id: userId,
+      username: 'Thành viên',
+      badge_id: badgeId,
+      badge_name: badgeId,
+      reason: `Cập nhật hạn dùng: ${expiresAt ? new Date(expiresAt).toLocaleDateString('vi-VN') : 'Vĩnh viễn'}`,
+      expires_at: expiresAt,
+    });
+  }
+}
+
+export async function getMembersWithBadge(badgeId: string): Promise<MemberProfile[]> {
+  const allMembers = await getAllMemberProfiles();
+  const client = getSupabaseClient();
+  let userBadges: UserBadge[] = [];
+
+  if (client) {
+    try {
+      const { data } = await client.from('user_badges').select('*').eq('badge_id', badgeId);
+      userBadges = (data || []) as UserBadge[];
+    } catch (e) {
+      const uBadges = getLocal<UserBadge[]>(STORAGE_USER_BADGES, []);
+      userBadges = uBadges.filter((ub) => ub.badge_id === badgeId);
+    }
   } else {
     const uBadges = getLocal<UserBadge[]>(STORAGE_USER_BADGES, []);
-    const filtered = uBadges.filter((ub) => !(ub.user_id === userId && ub.badge_id === badgeId));
-    setLocal(STORAGE_USER_BADGES, filtered);
+    userBadges = uBadges.filter((ub) => ub.badge_id === badgeId);
   }
+
+  const userIds = new Set(userBadges.map((ub) => ub.user_id));
+  return allMembers.filter((m) => userIds.has(m.id));
 }
 
 // ==========================================
@@ -863,7 +1357,7 @@ export async function grantManualVip(
   const tiers = await getVipTiersConfig();
   const match = tiers.find((t) => t.id === vipTierId);
   if (match && match.badgeId) {
-    await grantUserBadge(userId, match.badgeId, undefined, reason);
+    await grantUserBadge(userId, match.badgeId, undefined, reason, null, 'admin_awarded');
   }
 }
 
@@ -879,13 +1373,14 @@ export async function revokeManualVip(userId: string): Promise<void> {
     .filter((d) => d.user_id === userId && d.status === 'approved')
     .reduce((sum, d) => sum + Number(d.amount), 0);
 
+  const config = await getDonationConfig();
   const match = evaluateMemberVipTier(userApprovedTotal, tiers);
   const nextTierId = match ? match.id : 'none';
 
   await updateCommunityMemberProfile(userId, {
     vip_tier: nextTierId,
     total_donated: userApprovedTotal,
-    donation_xu: Math.floor(userApprovedTotal / 1000),
+    donation_xu: Math.floor(userApprovedTotal / (config.xu_conversion_rate || 1000)),
   });
 }
 
@@ -895,20 +1390,78 @@ export async function revokeManualVip(userId: string): Promise<void> {
 
 export async function getDonationConfig(): Promise<DonationConfig> {
   const client = getSupabaseClient();
+  let baseConfig: DonationConfig = DEFAULT_DONATION_CONFIG;
+
   if (client) {
-    const { data } = await client.from('donation_config').select('*').single();
-    if (data) return data as DonationConfig;
+    try {
+      const { data } = await client.from('donation_config').select('*').single();
+      if (data) {
+        baseConfig = { ...DEFAULT_DONATION_CONFIG, ...data };
+      }
+    } catch (e) {
+      baseConfig = getLocal<DonationConfig>(STORAGE_DONATION_CONFIG, DEFAULT_DONATION_CONFIG);
+    }
+  } else {
+    baseConfig = getLocal<DonationConfig>(STORAGE_DONATION_CONFIG, DEFAULT_DONATION_CONFIG);
   }
-  return getLocal<DonationConfig>(STORAGE_DONATION_CONFIG, DEFAULT_DONATION_CONFIG);
+
+  // Ensure accounts array is always present & non-empty
+  if (!baseConfig.accounts || baseConfig.accounts.length === 0) {
+    baseConfig.accounts = [
+      {
+        id: 'bank_mb_default',
+        bank_name: baseConfig.bank_name || DEFAULT_DONATION_CONFIG.bank_name,
+        account_number: baseConfig.account_number || DEFAULT_DONATION_CONFIG.account_number,
+        account_holder: baseConfig.account_holder || DEFAULT_DONATION_CONFIG.account_holder,
+        default_transfer_note: baseConfig.transfer_note_prefix || DEFAULT_DONATION_CONFIG.transfer_note_prefix,
+        qr_code_url: baseConfig.qr_code_url || DEFAULT_DONATION_CONFIG.qr_code_url,
+        is_default: true,
+        is_enabled: true,
+        order: 1,
+      },
+    ];
+  }
+
+  if (!baseConfig.page_content) {
+    baseConfig.page_content = DEFAULT_DONATE_PAGE_CONTENT;
+  }
+
+  if (!baseConfig.suggested_amounts || baseConfig.suggested_amounts.length === 0) {
+    baseConfig.suggested_amounts = DEFAULT_SUGGESTED_AMOUNTS;
+  }
+
+  if (!baseConfig.xu_conversion_rate) {
+    baseConfig.xu_conversion_rate = 1000;
+  }
+
+  if (!baseConfig.qr_images) {
+    baseConfig.qr_images = DEFAULT_DONATION_CONFIG.qr_images || [];
+  }
+
+  return baseConfig;
 }
 
 export async function saveDonationConfig(config: DonationConfig): Promise<void> {
+  // Sync top-level fields with default bank account for backward compatibility
+  const defaultAcc = config.accounts?.find((a) => a.is_default && a.is_enabled) || config.accounts?.[0];
+  const payload: DonationConfig = {
+    ...config,
+    bank_name: defaultAcc?.bank_name || config.bank_name,
+    account_number: defaultAcc?.account_number || config.account_number,
+    account_holder: defaultAcc?.account_holder || config.account_holder,
+    qr_code_url: defaultAcc?.qr_code_url || config.qr_code_url,
+    transfer_note_prefix: defaultAcc?.default_transfer_note || config.transfer_note_prefix || 'ARCHIVE VIP',
+  };
+
   const client = getSupabaseClient();
   if (client) {
-    await client.from('donation_config').upsert([{ id: 1, ...config, updated_at: new Date().toISOString() }]);
-  } else {
-    setLocal(STORAGE_DONATION_CONFIG, config);
+    try {
+      await client.from('donation_config').upsert([{ id: 1, ...payload, updated_at: new Date().toISOString() }]);
+    } catch (e) {
+      console.warn('Supabase donation_config upsert warning:', e);
+    }
   }
+  setLocal(STORAGE_DONATION_CONFIG, payload);
 }
 
 export async function submitDonationClaim(
@@ -916,7 +1469,9 @@ export async function submitDonationClaim(
   amount: number,
   transactionCode: string,
   transferTime: string,
-  notes: string
+  notes: string,
+  receiptUrl?: string,
+  bankAccountId?: string
 ): Promise<DonationClaim> {
   const claimPayload: DonationClaim = {
     id: 'don_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now(),
@@ -926,31 +1481,39 @@ export async function submitDonationClaim(
     transaction_code: transactionCode.trim(),
     transfer_time: transferTime.trim() || new Date().toLocaleString('vi-VN'),
     notes: notes.trim(),
+    receipt_url: receiptUrl?.trim() || undefined,
+    bank_account_id: bankAccountId || undefined,
     status: 'pending',
     created_at: new Date().toISOString(),
   };
 
   const client = getSupabaseClient();
   if (client) {
-    const { data, error } = await client.from('donations').insert([claimPayload]).select().single();
-    if (error) throw error;
-    return data as DonationClaim;
-  } else {
-    const donations = getLocal<DonationClaim[]>(STORAGE_DONATIONS, []);
-    donations.push(claimPayload);
-    setLocal(STORAGE_DONATIONS, donations);
-    return claimPayload;
+    try {
+      const { data, error } = await client.from('donations').insert([claimPayload]).select().single();
+      if (!error && data) return data as DonationClaim;
+    } catch (e) {
+      console.warn('Supabase donations insert error:', e);
+    }
   }
+
+  const donations = getLocal<DonationClaim[]>(STORAGE_DONATIONS, []);
+  donations.push(claimPayload);
+  setLocal(STORAGE_DONATIONS, donations);
+  return claimPayload;
 }
 
 export async function getDonationClaims(): Promise<DonationClaim[]> {
   const client = getSupabaseClient();
   if (client) {
-    const { data } = await client.from('donations').select('*').order('created_at', { ascending: false });
-    return (data || []) as DonationClaim[];
-  } else {
-    return getLocal<DonationClaim[]>(STORAGE_DONATIONS, []);
+    try {
+      const { data } = await client.from('donations').select('*').order('created_at', { ascending: false });
+      if (data) return data as DonationClaim[];
+    } catch (e) {
+      // fallback
+    }
   }
+  return getLocal<DonationClaim[]>(STORAGE_DONATIONS, []);
 }
 
 export async function approveDonationClaim(
@@ -961,9 +1524,15 @@ export async function approveDonationClaim(
   let claim: DonationClaim | null = null;
 
   if (client) {
-    const { data } = await client.from('donations').select('*').eq('id', claimId).single();
-    claim = data as DonationClaim;
-  } else {
+    try {
+      const { data } = await client.from('donations').select('*').eq('id', claimId).single();
+      claim = data as DonationClaim;
+    } catch (e) {
+      // fallback
+    }
+  }
+
+  if (!claim) {
     const donations = getLocal<DonationClaim[]>(STORAGE_DONATIONS, []);
     claim = donations.find((d) => d.id === claimId) || null;
   }
@@ -972,23 +1541,27 @@ export async function approveDonationClaim(
   if (claim.status === 'approved') throw new Error('Yêu cầu ủng hộ này đã được xác nhận trước đó.');
 
   if (client) {
-    await client
-      .from('donations')
-      .update({
-        status: 'approved',
-        approved_by: adminId,
-        approved_at: new Date().toISOString(),
-      })
-      .eq('id', claimId);
-  } else {
-    const donations = getLocal<DonationClaim[]>(STORAGE_DONATIONS, []);
-    const idx = donations.findIndex((d) => d.id === claimId);
-    if (idx !== -1) {
-      donations[idx].status = 'approved';
-      donations[idx].approved_by = adminId;
-      donations[idx].approved_at = new Date().toISOString();
-      setLocal(STORAGE_DONATIONS, donations);
+    try {
+      await client
+        .from('donations')
+        .update({
+          status: 'approved',
+          approved_by: adminId,
+          approved_at: new Date().toISOString(),
+        })
+        .eq('id', claimId);
+    } catch (e) {
+      // fallback
     }
+  }
+
+  const donations = getLocal<DonationClaim[]>(STORAGE_DONATIONS, []);
+  const idx = donations.findIndex((d) => d.id === claimId);
+  if (idx !== -1) {
+    donations[idx].status = 'approved';
+    donations[idx].approved_by = adminId;
+    donations[idx].approved_at = new Date().toISOString();
+    setLocal(STORAGE_DONATIONS, donations);
   }
 
   const member = await getMemberProfileById(claim.user_id);
@@ -1002,7 +1575,10 @@ export async function approveDonationClaim(
   const tiers = await getVipTiersConfig();
   const matchingTier = evaluateMemberVipTier(userApprovedTotal, tiers);
   const newVipTierId = matchingTier ? matchingTier.id : 'none';
-  const convertedXu = Math.floor(userApprovedTotal / 1000);
+
+  const config = await getDonationConfig();
+  const conversionRate = config.xu_conversion_rate || 1000;
+  const convertedXu = Math.floor(userApprovedTotal / conversionRate);
 
   await updateCommunityMemberProfile(claim.user_id, {
     total_donated: userApprovedTotal,
@@ -1011,10 +1587,31 @@ export async function approveDonationClaim(
   });
 
   if (matchingTier && matchingTier.badgeId) {
-    await grantUserBadge(claim.user_id, matchingTier.badgeId, adminId);
+    await grantUserBadge(claim.user_id, matchingTier.badgeId, adminId, 'VIP Supporter tự động', null, 'automatic');
   }
 
   return { success: true, newVipTier: newVipTierId };
+}
+
+export async function updateDonationClaimInternalNotes(
+  claimId: string,
+  internalNotes: string
+): Promise<void> {
+  const client = getSupabaseClient();
+  if (client) {
+    try {
+      await client.from('donations').update({ internal_notes: internalNotes }).eq('id', claimId);
+    } catch (e) {
+      // fallback
+    }
+  }
+
+  const donations = getLocal<DonationClaim[]>(STORAGE_DONATIONS, []);
+  const idx = donations.findIndex((d) => d.id === claimId);
+  if (idx !== -1) {
+    donations[idx].internal_notes = internalNotes;
+    setLocal(STORAGE_DONATIONS, donations);
+  }
 }
 
 export async function rejectDonationClaim(
@@ -1039,4 +1636,79 @@ export async function rejectDonationClaim(
       setLocal(STORAGE_DONATIONS, donations);
     }
   }
+}
+
+// ==========================================
+// PRESET AVATAR CATALOG MANAGEMENT
+// ==========================================
+
+export async function getAvatarCatalog(): Promise<PresetAvatar[]> {
+  const client = getSupabaseClient();
+  if (client) {
+    const { data } = await client.from('preset_avatars').select('*').order('id', { ascending: true });
+    if (data && data.length > 0) {
+      return data as PresetAvatar[];
+    }
+  }
+  return getLocal<PresetAvatar[]>(STORAGE_AVATAR_CATALOG, DEFAULT_PRESET_AVATARS);
+}
+
+export async function saveAvatarCatalog(catalog: PresetAvatar[]): Promise<void> {
+  const client = getSupabaseClient();
+  if (client) {
+    await client.from('preset_avatars').upsert(catalog);
+  }
+  setLocal(STORAGE_AVATAR_CATALOG, catalog);
+}
+
+export async function addPresetAvatar(avatar: Omit<PresetAvatar, 'id'>): Promise<PresetAvatar> {
+  const newAvatar: PresetAvatar = {
+    ...avatar,
+    id: 'av_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now(),
+  };
+
+  const catalog = await getAvatarCatalog();
+  if (newAvatar.is_default) {
+    catalog.forEach((a) => (a.is_default = false));
+  }
+  catalog.push(newAvatar);
+
+  const client = getSupabaseClient();
+  if (client) {
+    await client.from('preset_avatars').insert([newAvatar]);
+  }
+  setLocal(STORAGE_AVATAR_CATALOG, catalog);
+  return newAvatar;
+}
+
+export async function deletePresetAvatar(avatarId: string): Promise<void> {
+  const catalog = await getAvatarCatalog();
+  const filtered = catalog.filter((a) => a.id !== avatarId);
+
+  const client = getSupabaseClient();
+  if (client) {
+    await client.from('preset_avatars').delete().eq('id', avatarId);
+  }
+  setLocal(STORAGE_AVATAR_CATALOG, filtered);
+}
+
+export async function setDefaultAvatar(avatarId: string): Promise<void> {
+  const catalog = await getAvatarCatalog();
+  catalog.forEach((a) => {
+    a.is_default = a.id === avatarId;
+  });
+
+  const client = getSupabaseClient();
+  if (client) {
+    await client.from('preset_avatars').update({ is_default: false }).neq('id', avatarId);
+    await client.from('preset_avatars').update({ is_default: true }).eq('id', avatarId);
+  }
+  setLocal(STORAGE_AVATAR_CATALOG, catalog);
+}
+
+export async function getDefaultAvatarUrl(): Promise<string> {
+  const catalog = await getAvatarCatalog();
+  const def = catalog.find((a) => a.is_default);
+  if (def) return def.url;
+  return catalog[0]?.url || 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&w=400&q=80';
 }

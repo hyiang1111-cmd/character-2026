@@ -13,7 +13,9 @@ import {
   AlertCircle,
   Sparkles,
   ListMusic,
-  Disc
+  Disc,
+  Repeat,
+  Repeat1
 } from 'lucide-react';
 import { useMusic } from '../../context/MusicContext';
 
@@ -22,6 +24,7 @@ export const MusicPlayerWidget: React.FC = () => {
     isPlaying,
     isMuted,
     volume,
+    repeatMode,
     settings,
     tracks,
     activeTrack,
@@ -30,6 +33,7 @@ export const MusicPlayerWidget: React.FC = () => {
     loadError,
     togglePlay,
     toggleMute,
+    toggleRepeatMode,
     setVolume,
     nextTrack,
     prevTrack,
@@ -219,6 +223,30 @@ export const MusicPlayerWidget: React.FC = () => {
                 <SkipForward className="w-3.5 h-3.5" />
               </button>
             )}
+
+            <button
+              onClick={toggleRepeatMode}
+              className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+                repeatMode === 'all'
+                  ? 'text-[#865B9E] font-bold bg-[#E8D7F7]/60 hover:bg-[#E8D7F7]'
+                  : repeatMode === 'one'
+                  ? 'text-purple-900 font-bold bg-purple-200 hover:bg-purple-300'
+                  : 'text-[#8E7A84] hover:bg-white'
+              }`}
+              title={
+                repeatMode === 'all'
+                  ? 'Chế độ: Lặp lại playlist (Loop Playlist)'
+                  : repeatMode === 'one'
+                  ? 'Chế độ: Lặp lại 1 bài (Single Track Loop)'
+                  : 'Chế độ: Phát 1 lượt (No Loop)'
+              }
+            >
+              {repeatMode === 'one' ? (
+                <Repeat1 className="w-3.5 h-3.5 text-purple-900" />
+              ) : (
+                <Repeat className={`w-3.5 h-3.5 ${repeatMode === 'all' ? 'text-[#865B9E]' : 'text-[#8E7A84]'}`} />
+              )}
+            </button>
 
             <button
               onClick={() => setShowPlaylist((prev) => !prev)}

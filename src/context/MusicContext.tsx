@@ -10,10 +10,13 @@ import { MusicSettings, MusicTrack, DEFAULT_MUSIC_SETTINGS } from '../types/musi
 import { subscribeToMusicSettings, subscribeToMusicTracks } from '../services/storage';
 import { useAuth } from './AuthContext';
 
+export type RepeatMode = 'all' | 'one' | 'off';
+
 interface MusicContextType {
   isPlaying: boolean;
   isMuted: boolean;
   volume: number; // 0.0 - 1.0
+  repeatMode: RepeatMode;
   settings: MusicSettings;
   tracks: MusicTrack[];
   activeTrack: MusicTrack | null;
@@ -22,6 +25,7 @@ interface MusicContextType {
   loadError: string | null;
   togglePlay: () => void;
   toggleMute: () => void;
+  toggleRepeatMode: () => void;
   setVolume: (vol: number) => void;
   nextTrack: () => void;
   prevTrack: () => void;
@@ -37,6 +41,7 @@ const LOCAL_STORAGE_VOL_KEY = 'pca_music_volume';
 const LOCAL_STORAGE_MUTED_KEY = 'pca_music_muted';
 const LOCAL_STORAGE_USER_PAUSED_KEY = 'pca_music_user_paused';
 const LOCAL_STORAGE_ACTIVE_TRACK_ID_KEY = 'pca_music_active_track_id';
+const LOCAL_STORAGE_REPEAT_MODE_KEY = 'pca_music_repeat_mode';
 
 export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAdmin } = useAuth();
@@ -58,6 +63,15 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     return false;
   });
+
+  const [repeatMode, setRepeatModeState] = useState<RepeatMode>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(LOCAL_STORAGE_REPEAT_MODE_KEY);
+      if (saved === 'one' || saved === 'off' || saved === 'all') return saved;
+    }
+    return 'all'; // Default: continuous playlist loop
+  });
+
   const [volume, setVolumeState] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(LOCAL_STORAGE_VOL_KEY);
@@ -78,35 +92,6 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Track currently loaded URL in audio element to prevent unnecessary src re-assignments
   const loadedUrlRef = useRef<string>('');
-
-  // 1. Initialize HTMLAudioElement ONCE on mount at the highest app level
-  useEffect(() => {
-    const audio = new Audio();
-    audio.preload = 'auto';
-    audio.loop = settings.loop ?? true;
-    audio.volume = isMuted ? 0 : volume;
-    audioRef.current = audio;
-
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
-    const handleError = (e: Event) => {
-      console.warn('Background audio source failed to load or invalid URL:', e);
-      setLoadError('URL âm thanh không hợp lệ hoặc không thể truy cập.');
-      setIsPlaying(false);
-    };
-
-    audio.addEventListener('play', handlePlay);
-    audio.addEventListener('pause', handlePause);
-    audio.addEventListener('error', handleError);
-
-    return () => {
-      audio.removeEventListener('play', handlePlay);
-      audio.removeEventListener('pause', handlePause);
-      audio.removeEventListener('error', handleError);
-      audio.pause();
-      audio.src = '';
-    };
-  }, []);
 
   // 2. Real-time subscription to Firestore settings and playlist tracks
   useEffect(() => {
@@ -155,6 +140,144 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const hasTrackSource = Boolean(currentSrc && currentSrc.trim().length > 0);
 
+  // Latest State Refs for stable event handlers without re-subscribing
+  const playlistRef = useRef<MusicTrack[]>(effectivePlaylist);
+  playlistRef.current = effectivePlaylist;
+
+  const currentSelectedTrackRef = useRef<MusicTrack | null>(currentSelectedTrack);
+  currentSelectedTrackRef.current = currentSelectedTrack;
+
+  const repeatModeRef = useRef<RepeatMode>(repeatMode);
+  repeatModeRef.current = repeatMode;
+
+  const consecutiveErrorCountRef = useRef<number>(0);
+
+  // 1. Initialize HTMLAudioElement ONCE on mount at the highest app level
+  useEffect(() => {
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.loop = false; // Disable native single-file loop so ended event triggers continuous playlist next
+    audio.volume = isMuted ? 0 : volume;
+    audioRef.current = audio;
+
+    const handlePlay = () => {
+      setIsPlaying(true);
+      setIsAutoplayBlocked(false);
+    };
+
+    const handlePause = () => {
+      setIsPlaying(false);
+    };
+
+    const handlePlaying = () => {
+      setIsPlaying(true);
+      setIsAutoplayBlocked(false);
+      setLoadError(null);
+      consecutiveErrorCountRef.current = 0;
+    };
+
+    const handleEnded = () => {
+      const playlist = playlistRef.current;
+      const currentTrack = currentSelectedTrackRef.current;
+      const mode = repeatModeRef.current;
+      const audioEl = audioRef.current;
+
+      if (!audioEl) return;
+
+      // Repeat single track mode
+      if (mode === 'one') {
+        audioEl.currentTime = 0;
+        audioEl.play().catch((err) => console.warn('Repeat single track error:', err));
+        return;
+      }
+
+      if (!playlist || playlist.length === 0) return;
+
+      const currentIndex = playlist.findIndex((t) => t.id === currentTrack?.id);
+
+      // Stopped mode when reaching end of playlist
+      if (mode === 'off' && currentIndex >= playlist.length - 1) {
+        setIsPlaying(false);
+        return;
+      }
+
+      // Continuous Playlist Auto-Next (loops to index 0 if at last track)
+      const nextIndex = (currentIndex + 1) % playlist.length;
+      const nextTrackObj = playlist[nextIndex];
+
+      if (!nextTrackObj) return;
+
+      if (nextTrackObj.id !== currentTrack?.id) {
+        setSelectedTrackId(nextTrackObj.id);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(LOCAL_STORAGE_ACTIVE_TRACK_ID_KEY, nextTrackObj.id);
+        }
+        setPreviewingTrackId(null);
+        setIsPlaying(true);
+      } else {
+        // Single track in playlist continuous loop
+        audioEl.currentTime = 0;
+        audioEl.play().catch((err) => console.warn('Playlist loop single track error:', err));
+      }
+    };
+
+    const handleError = (e: Event) => {
+      const playlist = playlistRef.current;
+      const currentTrack = currentSelectedTrackRef.current;
+      const audioEl = audioRef.current;
+
+      console.warn('Audio element load error for track:', currentTrack?.title, e);
+
+      if (!playlist || playlist.length === 0) {
+        setLoadError('URL âm thanh không hợp lệ hoặc không thể truy cập.');
+        setIsPlaying(false);
+        return;
+      }
+
+      consecutiveErrorCountRef.current += 1;
+
+      // Auto-skip to next track if less than total playlist length
+      if (consecutiveErrorCountRef.current < playlist.length) {
+        setLoadError(`Bài "${currentTrack?.title || 'hát'}" bị lỗi, đang tự động chuyển bài tiếp theo...`);
+
+        const currentIndex = playlist.findIndex((t) => t.id === currentTrack?.id);
+        const nextIndex = (currentIndex + 1) % playlist.length;
+        const nextTrackObj = playlist[nextIndex];
+
+        if (nextTrackObj && nextTrackObj.id !== currentTrack?.id) {
+          setSelectedTrackId(nextTrackObj.id);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(LOCAL_STORAGE_ACTIVE_TRACK_ID_KEY, nextTrackObj.id);
+          }
+          setPreviewingTrackId(null);
+          setIsPlaying(true);
+        }
+      } else {
+        // All tracks in playlist failed
+        setLoadError('Không thể tải bài hát nào trong playlist. Vui lòng kiểm tra lại liên kết audio.');
+        setIsPlaying(false);
+        consecutiveErrorCountRef.current = 0;
+        if (audioEl) audioEl.pause();
+      }
+    };
+
+    audio.addEventListener('play', handlePlay);
+    audio.addEventListener('pause', handlePause);
+    audio.addEventListener('playing', handlePlaying);
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('error', handleError);
+
+    return () => {
+      audio.removeEventListener('play', handlePlay);
+      audio.removeEventListener('pause', handlePause);
+      audio.removeEventListener('playing', handlePlaying);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('error', handleError);
+      audio.pause();
+      audio.src = '';
+    };
+  }, []);
+
   // 3. Audio Source Synchronizer: Updates audio.src ONLY if URL is genuinely different
   useEffect(() => {
     const audio = audioRef.current;
@@ -167,6 +290,9 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return;
     }
 
+    // Keep native loop false so ended fires for continuous playlist auto-next
+    audio.loop = false;
+
     // Resolve URL string to full absolute URL for accurate comparison with audio.src
     const resolvedUrl = currentSrc.startsWith('http')
       ? currentSrc
@@ -174,46 +300,21 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // CRITICAL: Compare resolved absolute URL against loadedUrlRef to prevent resetting audio currentTime!
     if (loadedUrlRef.current !== resolvedUrl && audio.src !== resolvedUrl) {
-      const wasPlaying = !audio.paused;
+      const wasPlaying = !audio.paused || isPlaying;
       loadedUrlRef.current = resolvedUrl;
       audio.src = currentSrc;
-      audio.loop = settings.loop ?? true;
       audio.load();
-      setLoadError(null);
 
       if (wasPlaying && settings.enabled) {
         audio.play().catch((err) => {
           console.warn('Audio auto-resume note:', err);
+          if (err.name === 'NotAllowedError') {
+            setIsAutoplayBlocked(true);
+          }
         });
       }
     }
-  }, [currentSrc, hasTrackSource, settings.enabled, settings.loop]);
-
-  // 4. Synchronize loop mode and ended event
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    audio.loop = Boolean(settings.loop);
-
-    const handleEnded = () => {
-      if (!settings.loop && effectivePlaylist.length > 1) {
-        // Auto-advance to next track when song finishes
-        const currentIndex = effectivePlaylist.findIndex((t) => t.id === currentSelectedTrack?.id);
-        const nextIndex = (currentIndex + 1) % effectivePlaylist.length;
-        const nextTrackObj = effectivePlaylist[nextIndex];
-        if (nextTrackObj) {
-          setSelectedTrackId(nextTrackObj.id);
-          localStorage.setItem(LOCAL_STORAGE_ACTIVE_TRACK_ID_KEY, nextTrackObj.id);
-        }
-      }
-    };
-
-    audio.addEventListener('ended', handleEnded);
-    return () => {
-      audio.removeEventListener('ended', handleEnded);
-    };
-  }, [settings.loop, effectivePlaylist, currentSelectedTrack]);
+  }, [currentSrc, hasTrackSource, settings.enabled, isPlaying]);
 
   // 5. Volume & Mute Synchronizer
   useEffect(() => {
@@ -242,6 +343,21 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   }, []);
 
+  // Toggle Repeat Mode ('all' -> 'one' -> 'off' -> 'all')
+  const toggleRepeatMode = useCallback(() => {
+    setRepeatModeState((prev) => {
+      let next: RepeatMode = 'all';
+      if (prev === 'all') next = 'one';
+      else if (prev === 'one') next = 'off';
+      else if (prev === 'off') next = 'all';
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(LOCAL_STORAGE_REPEAT_MODE_KEY, next);
+      }
+      return next;
+    });
+  }, []);
+
   // Toggle Play / Pause
   const togglePlay = useCallback(() => {
     const audio = audioRef.current;
@@ -262,29 +378,35 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Playlist Navigation: Next Track
   const nextTrack = useCallback(() => {
-    if (effectivePlaylist.length === 0) return;
-    const currentIndex = effectivePlaylist.findIndex((t) => t.id === currentSelectedTrack?.id);
-    const nextIndex = (currentIndex + 1) % effectivePlaylist.length;
-    const nextT = effectivePlaylist[nextIndex];
+    const playlist = playlistRef.current;
+    if (playlist.length === 0) return;
+    const currentTrack = currentSelectedTrackRef.current;
+    const currentIndex = playlist.findIndex((t) => t.id === currentTrack?.id);
+    const nextIndex = (currentIndex + 1) % playlist.length;
+    const nextT = playlist[nextIndex];
     if (nextT) {
       setSelectedTrackId(nextT.id);
       localStorage.setItem(LOCAL_STORAGE_ACTIVE_TRACK_ID_KEY, nextT.id);
       setPreviewingTrackId(null);
+      setIsPlaying(true);
     }
-  }, [effectivePlaylist, currentSelectedTrack]);
+  }, []);
 
   // Playlist Navigation: Previous Track
   const prevTrack = useCallback(() => {
-    if (effectivePlaylist.length === 0) return;
-    const currentIndex = effectivePlaylist.findIndex((t) => t.id === currentSelectedTrack?.id);
-    const prevIndex = (currentIndex - 1 + effectivePlaylist.length) % effectivePlaylist.length;
-    const prevT = effectivePlaylist[prevIndex];
+    const playlist = playlistRef.current;
+    if (playlist.length === 0) return;
+    const currentTrack = currentSelectedTrackRef.current;
+    const currentIndex = playlist.findIndex((t) => t.id === currentTrack?.id);
+    const prevIndex = (currentIndex - 1 + playlist.length) % playlist.length;
+    const prevT = playlist[prevIndex];
     if (prevT) {
       setSelectedTrackId(prevT.id);
       localStorage.setItem(LOCAL_STORAGE_ACTIVE_TRACK_ID_KEY, prevT.id);
       setPreviewingTrackId(null);
+      setIsPlaying(true);
     }
-  }, [effectivePlaylist, currentSelectedTrack]);
+  }, []);
 
   // Select specific track from playlist
   const selectTrack = useCallback((track: MusicTrack) => {
@@ -292,6 +414,7 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem(LOCAL_STORAGE_ACTIVE_TRACK_ID_KEY, track.id);
     setPreviewingTrackId(null);
     localStorage.removeItem(LOCAL_STORAGE_USER_PAUSED_KEY);
+    setIsPlaying(true);
 
     const audio = audioRef.current;
     if (audio) {
@@ -389,6 +512,7 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isPlaying,
         isMuted,
         volume,
+        repeatMode,
         settings,
         tracks: effectivePlaylist,
         activeTrack: currentSelectedTrack,
@@ -397,6 +521,7 @@ export const MusicProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         loadError,
         togglePlay,
         toggleMute,
+        toggleRepeatMode,
         setVolume,
         nextTrack,
         prevTrack,
@@ -418,3 +543,4 @@ export const useMusic = (): MusicContextType => {
   }
   return context;
 };
+

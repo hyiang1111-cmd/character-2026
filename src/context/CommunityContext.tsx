@@ -19,8 +19,10 @@ import {
   getUserBadges,
   updateUserActiveTime,
   recordCharacterChatClick,
-  getMemberRanksMap
+  getMemberRanksMap,
+  ensureAdminMemberProfile
 } from '../services/communityStorage';
+import { useAuth } from './AuthContext';
 
 interface CommunityContextType {
   member: MemberProfile | null;
@@ -46,6 +48,7 @@ export const CommunityProvider: React.FC<{
   children: React.ReactNode;
   onShowToast: (type: 'success' | 'error' | 'info', title: string, message?: string) => void;
 }> = ({ children, onShowToast }) => {
+  const { isAdmin, currentUser } = useAuth();
   const [member, setMember] = useState<MemberProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [viewMemberProfileId, setViewMemberProfileId] = useState<string | null>(null);
@@ -63,18 +66,39 @@ export const CommunityProvider: React.FC<{
     }
   }, []);
 
+  // Sync Admin session as Member Profile
+  useEffect(() => {
+    async function syncAdminMember() {
+      if (isAdmin && currentUser) {
+        try {
+          const adminProf = await ensureAdminMemberProfile(currentUser);
+          setMember(adminProf);
+          await refreshRanksMap();
+        } catch (e) {
+          console.warn('Failed to sync admin member profile:', e);
+        }
+      }
+    }
+    syncAdminMember();
+  }, [isAdmin, currentUser, refreshRanksMap]);
+
   // Restore session
   const refreshMember = useCallback(async () => {
     try {
-      const current = await getCurrentCommunityMember();
-      setMember(current);
+      if (isAdmin && currentUser) {
+        const adminProf = await ensureAdminMemberProfile(currentUser);
+        setMember(adminProf);
+      } else {
+        const current = await getCurrentCommunityMember();
+        setMember(current);
+      }
       await refreshRanksMap();
     } catch (e) {
       console.warn('Community session restore error:', e);
     } finally {
       setIsLoading(false);
     }
-  }, [refreshRanksMap]);
+  }, [isAdmin, currentUser, refreshRanksMap]);
 
   useEffect(() => {
     refreshMember();

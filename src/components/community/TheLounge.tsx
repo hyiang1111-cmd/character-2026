@@ -260,11 +260,26 @@ export const TheLounge: React.FC<TheLoungeProps> = ({ onOpenAuth, onShowToast })
                           return (
                             <span
                               key={ub.id || badgeObj.id}
-                              style={{ backgroundColor: `${badgeObj.color}15`, color: badgeObj.color, borderColor: `${badgeObj.color}40` }}
-                              className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold border shadow-2xs"
-                              title={badgeObj.description}
+                              style={{
+                                backgroundColor: `${badgeObj.color}15`,
+                                color: badgeObj.color,
+                                borderColor: `${badgeObj.color}40`,
+                                boxShadow: badgeObj.glow_color ? `0 0 6px ${badgeObj.glow_color}40` : undefined,
+                              }}
+                              className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-full text-[9px] font-bold border shadow-2xs ${
+                                badgeObj.animation_effect === 'pulse'
+                                  ? 'animate-pulse'
+                                  : badgeObj.animation_effect === 'bounce'
+                                  ? 'animate-bounce'
+                                  : ''
+                              }`}
+                              title={`${badgeObj.name}: ${badgeObj.description}${ub.expires_at ? ` (Hạn: ${new Date(ub.expires_at).toLocaleDateString('vi-VN')})` : ''}`}
                             >
-                              <span>{badgeObj.icon}</span>
+                              {badgeObj.image_url ? (
+                                <img src={badgeObj.image_url} alt={badgeObj.name} className="w-3.5 h-3.5 object-contain" />
+                              ) : (
+                                <span>{badgeObj.icon}</span>
+                              )}
                               <span className="hidden sm:inline">{badgeObj.name}</span>
                             </span>
                           );
