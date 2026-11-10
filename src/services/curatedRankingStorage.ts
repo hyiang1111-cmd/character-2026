@@ -1,3 +1,5 @@
+import { db, auth, checkServerAdminAuthorization, handleFirestoreError, OperationType } from './firebase';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { getSupabaseClient } from './supabase';
 import { Character } from '../types/character';
 
@@ -43,9 +45,29 @@ function setLocal<T>(key: string, value: T): void {
 }
 
 /**
- * Fetches current Admin Curated Ranking (Top 1, Top 2, Top 3) from Supabase or LocalStorage.
+ * Fetches current Admin Curated Ranking (Top 1, Top 2, Top 3) from Firestore, Supabase, or LocalStorage fallback.
  */
 export async function getCuratedRanking(): Promise<CuratedRanking> {
+  // 1. Try fetching from Cloud Firestore first (primary zero-config server storage)
+  try {
+    const snap = await getDoc(doc(db, 'settings', 'curated_ranking'));
+    if (snap.exists()) {
+      const data = snap.data();
+      const ranking: CuratedRanking = {
+        top1_id: data.top1_id || null,
+        top2_id: data.top2_id || null,
+        top3_id: data.top3_id || null,
+        updated_at: data.updated_at || new Date().toISOString(),
+        updated_by: data.updated_by || 'admin',
+      };
+      setLocal(STORAGE_CURATED_RANKING, ranking);
+      return ranking;
+    }
+  } catch (e) {
+    console.warn('Firestore curated ranking fetch notice:', e);
+  }
+
+  // 2. Secondary fallback: try fetching from Supabase if configured
   const client = getSupabaseClient();
   if (client) {
     try {
@@ -67,7 +89,7 @@ export async function getCuratedRanking(): Promise<CuratedRanking> {
         return ranking;
       }
     } catch (e) {
-      console.warn('Failed to fetch curated ranking from Supabase:', e);
+      console.warn('Supabase curated ranking fetch notice:', e);
     }
   }
 
@@ -75,21 +97,67 @@ export async function getCuratedRanking(): Promise<CuratedRanking> {
 }
 
 /**
- * Saves Admin Curated Ranking to Supabase and dispatches real-time event.
+ * Real-time subscription to Admin Curated Ranking via Cloud Firestore.
+ * Automatically notifies all connected browsers and devices across the world when Admin updates Top 3.
+ */
+export function subscribeToCuratedRanking(callback: (ranking: CuratedRanking) => void): () => void {
+  try {
+    return onSnapshot(
+      doc(db, 'settings', 'curated_ranking'),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const ranking: CuratedRanking = {
+            top1_id: data.top1_id || null,
+            top2_id: data.top2_id || null,
+            top3_id: data.top3_id || null,
+            updated_at: data.updated_at,
+            updated_by: data.updated_by,
+          };
+          setLocal(STORAGE_CURATED_RANKING, ranking);
+          callback(ranking);
+        } else {
+          callback(DEFAULT_CURATED_RANKING);
+        }
+      },
+      (error) => {
+        console.warn('Firestore curated ranking subscription warning:', error);
+      }
+    );
+  } catch (e) {
+    console.warn('Failed to setup Firestore curated ranking subscription:', e);
+    return () => {};
+  }
+}
+
+/**
+ * Saves Admin Curated Ranking to Cloud Firestore with strict server-side Admin verification.
+ * Also attempts dual-sync to Supabase if table exists and dispatches window event.
  */
 export async function saveCuratedRanking(
   ranking: CuratedRanking,
   updatedBy?: string
 ): Promise<CuratedRanking> {
+  const isAuthorized = await checkServerAdminAuthorization(auth.currentUser);
+  if (!isAuthorized) {
+    throw new Error('Từ chối truy cập: Bạn chưa đăng nhập hoặc không có quyền Quản trị viên để chỉnh sửa Bảng Xếp Hạng.');
+  }
+
   // Sanitize: ensure no character occupies multiple positions
   const cleanRanking = sanitizeCuratedRanking(ranking);
   const now = new Date().toISOString();
   cleanRanking.updated_at = now;
-  cleanRanking.updated_by = updatedBy || 'admin';
+  cleanRanking.updated_by = updatedBy || auth.currentUser?.email || 'admin';
 
+  // 1. Primary Save to Firestore
+  try {
+    await setDoc(doc(db, 'settings', 'curated_ranking'), cleanRanking);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, 'settings/curated_ranking');
+  }
+
+  // 2. Dual-sync to Supabase if configured
   const client = getSupabaseClient();
-  let savedToSupabase = false;
-
   if (client) {
     try {
       const record = {
@@ -101,23 +169,15 @@ export async function saveCuratedRanking(
         updated_by: cleanRanking.updated_by,
       };
 
-      const { error } = await client
-        .from('character_curated_ranking')
-        .upsert(record);
-
-      if (!error) {
-        savedToSupabase = true;
-      } else {
-        console.warn('Supabase character_curated_ranking save notice:', error.message);
-      }
+      await client.from('character_curated_ranking').upsert(record);
     } catch (e) {
-      console.warn('Exception saving curated ranking to Supabase:', e);
+      console.warn('Supabase dual-sync notice:', e);
     }
   }
 
   setLocal(STORAGE_CURATED_RANKING, cleanRanking);
 
-  // Dispatch custom window event so home page and all views update in real time
+  // Dispatch custom window event for instant local UI update
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
       new CustomEvent('pca_curated_ranking_updated', {

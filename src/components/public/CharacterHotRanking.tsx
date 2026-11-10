@@ -9,6 +9,7 @@ import {
 import { Character } from '../../types/character';
 import {
   getCuratedRanking,
+  subscribeToCuratedRanking,
   computeCuratedRankingList,
   CuratedRanking,
   DEFAULT_CURATED_RANKING
@@ -46,6 +47,12 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
   useEffect(() => {
     loadData();
 
+    // Realtime Cloud Firestore subscription for all users across the world
+    const unsubscribe = subscribeToCuratedRanking((latestRanking) => {
+      setCuratedRanking(latestRanking);
+      setIsLoading(false);
+    });
+
     const handleCuratedUpdated = (e: any) => {
       if (e?.detail?.ranking) {
         setCuratedRanking(e.detail.ranking);
@@ -58,6 +65,7 @@ export const CharacterHotRanking: React.FC<CharacterHotRankingProps> = ({
       window.addEventListener('pca_curated_ranking_updated', handleCuratedUpdated);
     }
     return () => {
+      unsubscribe();
       if (typeof window !== 'undefined') {
         window.removeEventListener('pca_curated_ranking_updated', handleCuratedUpdated);
       }
